@@ -56,6 +56,45 @@ colcon build --packages-select jetcar_edge
 source install/setup.bash
 ```
 
+## Mock Camera Upload
+
+When the real car/camera is not available, upload one local image as the cloud
+reference frame:
+
+```bash
+cd /path/to/JetCarEdge
+python scripts/upload_mock_camera.py \
+  --cloud http://192.168.137.1:8000 \
+  --car-id car_001 \
+  --image ../yolov5-7.0/data/images/bus.jpg
+```
+
+After this succeeds, the mobile app can upload another image to compare against
+this simulated camera frame.
+
+## Mock Camera Server
+
+For the newer request-response flow, run a tiny HTTP server on the edge side.
+The cloud will request the current frame only when the phone uploads a query
+image:
+
+```bash
+cd /path/to/JetCarEdge
+python scripts/mock_camera_server.py \
+  --host 0.0.0.0 \
+  --port 8100 \
+  --image ../yolov5-7.0/data/images/bus.jpg
+```
+
+Then configure JetCarCloud:
+
+```bash
+EDGE_FRAME_URL=http://127.0.0.1:8100/api/frame
+```
+
+Later, this server can keep the same `/api/frame` interface and replace the
+fixed file read with a camera/video-frame capture.
+
 Start the node after the cloud service is already listening:
 
 ```bash
@@ -125,4 +164,3 @@ The cloud service returns:
   ]
 }
 ```
-
