@@ -1,0 +1,16 @@
+car_id: car_001
+cloud_url: ws://192.168.137.1:8000/ws/inference/car_001/edge
+camera_topic: /camera/image_raw
+scan_topic: /scan
+imu_topic: /imu/data
+ai_enable_topic: /jetcar/ai_enable
+snapshot_topic: /jetcar/snapshot
+ai_result_topic: /jetcar/ai_result
+emergency_stop_topic: /jetcar/emergency_stop
+upload_fps: 5.0
+image_width: 640
+jpeg_quality: 70
+queue_size: 2
+danger_distance_m: 1.5
+reconnect_seconds: 2.0
+

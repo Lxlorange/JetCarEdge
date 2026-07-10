@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>jetcar_edge</name>
+  <version>0.1.0</version>
+  <description>Jetson-side camera and sensor upload bridge for JetCar AI inference.</description>
+  <maintainer email="dev@example.com">JetCar Team</maintainer>
+  <license>MIT</license>
+
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>cv_bridge</depend>
+
+  <exec_depend>python3-opencv</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
+
