@@ -1,9 +1,16 @@
 car_id: car_001
-cloud_url: ws://192.168.137.1:8000/ws/inference/car_001/edge
+stream_id: camera_front
+cloud_host: 192.168.137.1
+cloud_port: 8000
+algorithm_ids:
+  - yolov5-manhole-detect
+  - yolov8-road-damage
+cloud_url: ""
 camera_topic: /camera/image_raw
 scan_topic: /scan
 imu_topic: /imu/data
 ai_enable_topic: /jetcar/ai_enable
+algorithm_control_topic: /jetcar/algorithm_ids
 snapshot_topic: /jetcar/snapshot
 ai_result_topic: /jetcar/ai_result
 emergency_stop_topic: /jetcar/emergency_stop
@@ -13,4 +20,3 @@ jpeg_quality: 70
 queue_size: 2
 danger_distance_m: 1.5
 reconnect_seconds: 2.0
-

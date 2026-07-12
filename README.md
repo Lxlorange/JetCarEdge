@@ -101,66 +101,73 @@ Start the node after the cloud service is already listening:
 ros2 run jetcar_edge edge_upload_node \
   --ros-args \
   -p car_id:=car_001 \
-  -p cloud_url:=ws://192.168.137.1:8000/ws/inference/car_001/edge \
+  -p stream_id:=camera_front \
+  -p cloud_host:=192.168.137.1 \
+  -p cloud_port:=8000 \
+  -p algorithm_ids:="[yolov5-manhole-detect,yolov8-road-damage]" \
   -p camera_topic:=/camera/image_raw \
   -p scan_topic:=/scan \
   -p imu_topic:=/imu/data
 ```
+
+The node builds this Cloud upload URL automatically:
+
+```text
+ws://<cloud_host>:<cloud_port>/ws/video/<car_id>/<stream_id>/edge?algorithm_ids=<ids>&include_image=true
+```
+
+Set `cloud_url` only when you need to override the generated URL.
 
 Useful control topics:
 
 ```bash
 ros2 topic pub /jetcar/ai_enable std_msgs/msg/Bool "{data: true}" --once
 ros2 topic pub /jetcar/snapshot std_msgs/msg/Empty "{}" --once
+ros2 topic pub /jetcar/algorithm_ids std_msgs/msg/String "{data: 'yolov5-manhole-detect,yolov8-road-damage'}" --once
 ros2 topic echo /jetcar/ai_result
 ros2 topic echo /jetcar/emergency_stop
 ```
 
+`/jetcar/algorithm_ids` can also receive JSON:
+
+```bash
+ros2 topic pub /jetcar/algorithm_ids std_msgs/msg/String \
+  "{data: '{\"algorithm_ids\":[\"yolov8-road-damage\"]}'}" --once
+```
+
 ## Message Contract
 
-The edge node sends:
+The edge node sends each video frame to `/ws/video/{car_id}/{stream_id}/edge`:
 
 ```json
 {
-  "type": "edge_frame",
   "car_id": "car_001",
-  "timestamp": 1720000000.12,
   "image": {
     "encoding": "jpeg",
     "width": 640,
     "height": 480,
     "data": "base64-jpeg"
-  },
-  "sensors": {
-    "lidar": {
-      "angle_min": -3.14,
-      "angle_increment": 0.01,
-      "ranges": [1.2, 1.3]
-    },
-    "imu": {
-      "orientation": [0, 0, 0, 1],
-      "angular_velocity": [0, 0, 0],
-      "linear_acceleration": [0, 0, 0]
-    }
   }
 }
 ```
 
-The cloud service returns:
+The cloud service publishes algorithm results to the app WebSocket
+`/ws/inference/{car_id}/app`:
 
 ```json
 {
-  "type": "yolo_fusion",
+  "type": "algorithm_result",
+  "ok": true,
+  "algorithm_id": "yolov8-road-damage",
   "car_id": "car_001",
-  "edge_timestamp": 1720000000.12,
-  "server_latency_ms": 18.5,
-  "detections": [
-    {
-      "label": "person",
-      "confidence": 0.91,
-      "bbox": [120, 80, 320, 420],
-      "distance_m": 2.4
-    }
-  ]
+  "stream_id": "camera_front",
+  "runner": "local",
+  "latency_ms": 18.5,
+  "result": {
+    "detection_count": 1,
+    "detections": []
+  },
+  "annotated_image": null,
+  "error": ""
 }
 ```

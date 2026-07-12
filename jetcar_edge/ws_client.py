@@ -46,6 +46,16 @@ class CloudWsClient:
         if self._thread:
             self._thread.join(timeout=3.0)
 
+    def update_url(self, url: str) -> None:
+        if url == self._url:
+            return
+        was_running = self._thread is not None and self._thread.is_alive()
+        if was_running:
+            self.stop()
+        self._url = url
+        if was_running:
+            self.start()
+
     def submit(self, payload: Dict[str, Any]) -> None:
         try:
             self._queue.put_nowait(payload)

@@ -20,14 +20,22 @@ class EdgeUploadNode(Node):
         super().__init__("jetcar_edge_upload")
 
         self.declare_parameter("car_id", "car_001")
+        self.declare_parameter("stream_id", "camera_front")
+        self.declare_parameter("cloud_host", "192.168.137.1")
+        self.declare_parameter("cloud_port", 8000)
+        self.declare_parameter(
+            "algorithm_ids",
+            ["yolov5-manhole-detect", "yolov8-road-damage"],
+        )
         self.declare_parameter(
             "cloud_url",
-            "ws://192.168.137.1:8000/ws/video/car_001/camera_front/edge?algorithm_id=yolov5-similarity",
+            "",
         )
         self.declare_parameter("camera_topic", "/camera/image_raw")
         self.declare_parameter("scan_topic", "/scan")
         self.declare_parameter("imu_topic", "/imu/data")
         self.declare_parameter("ai_enable_topic", "/jetcar/ai_enable")
+        self.declare_parameter("algorithm_control_topic", "/jetcar/algorithm_ids")
         self.declare_parameter("snapshot_topic", "/jetcar/snapshot")
         self.declare_parameter("ai_result_topic", "/jetcar/ai_result")
         self.declare_parameter("emergency_stop_topic", "/jetcar/emergency_stop")
@@ -38,7 +46,9 @@ class EdgeUploadNode(Node):
         self.declare_parameter("danger_distance_m", 1.5)
         self.declare_parameter("reconnect_seconds", 2.0)
 
-        self._car_id = self.get_parameter("car_id").value
+        self._car_id = str(self.get_parameter("car_id").value)
+        self._stream_id = str(self.get_parameter("stream_id").value)
+        self._algorithm_ids = self._read_algorithm_ids()
         self._upload_interval = 1.0 / max(float(self.get_parameter("upload_fps").value), 0.1)
         self._last_upload_at = 0.0
         self._upload_enabled = True
@@ -71,6 +81,12 @@ class EdgeUploadNode(Node):
             10,
         )
         self.create_subscription(
+            String,
+            str(self.get_parameter("algorithm_control_topic").value),
+            self._on_algorithm_ids,
+            10,
+        )
+        self.create_subscription(
             Empty,
             str(self.get_parameter("snapshot_topic").value),
             self._on_snapshot,
@@ -96,7 +112,7 @@ class EdgeUploadNode(Node):
         )
 
         self._cloud = CloudWsClient(
-            str(self.get_parameter("cloud_url").value),
+            self._cloud_url(),
             queue_size=int(self.get_parameter("queue_size").value),
             reconnect_seconds=float(self.get_parameter("reconnect_seconds").value),
             expect_response=False,
@@ -104,7 +120,9 @@ class EdgeUploadNode(Node):
             on_log=lambda msg: self.get_logger().info(msg),
         )
         self._cloud.start()
-        self.get_logger().info("JetCar edge upload node started")
+        self.get_logger().info(
+            f"JetCar edge upload node started stream_id={self._stream_id} algorithms={','.join(self._algorithm_ids)}"
+        )
 
     def destroy_node(self) -> bool:
         self._cloud.stop()
@@ -117,6 +135,18 @@ class EdgeUploadNode(Node):
     def _on_snapshot(self, _msg: Empty) -> None:
         self._snapshot_requested = True
         self.get_logger().info("single-frame snapshot requested")
+
+    def _on_algorithm_ids(self, msg: String) -> None:
+        algorithms = self._parse_algorithm_text(msg.data)
+        if not algorithms:
+            self.get_logger().warning("ignored empty algorithm_ids update")
+            return
+        if algorithms == self._algorithm_ids:
+            return
+        self._algorithm_ids = algorithms
+        url = self._cloud_url()
+        self._cloud.update_url(url)
+        self.get_logger().info(f"algorithm_ids updated: {','.join(self._algorithm_ids)}")
 
     def _on_image(self, msg: Image) -> None:
         now = time.monotonic()
@@ -131,7 +161,7 @@ class EdgeUploadNode(Node):
         try:
             encoded = self._codec.encode(msg)
             frame = VideoFrameUpload(
-                car_id=str(self._car_id),
+                car_id=self._car_id,
                 image=encoded,
             )
             self._cloud.submit(frame.to_dict())
@@ -149,6 +179,44 @@ class EdgeUploadNode(Node):
         self._emergency_pub.publish(Bool(data=dangerous))
         if dangerous:
             self.get_logger().warning("dangerous object detected; emergency_stop=true")
+
+    def _cloud_url(self) -> str:
+        explicit = str(self.get_parameter("cloud_url").value).strip()
+        if explicit:
+            return explicit
+        host = str(self.get_parameter("cloud_host").value).strip()
+        port = int(self.get_parameter("cloud_port").value)
+        algorithms = ",".join(self._algorithm_ids)
+        return (
+            f"ws://{host}:{port}/ws/video/{self._car_id}/{self._stream_id}/edge"
+            f"?algorithm_ids={algorithms}&include_image=true"
+        )
+
+    def _read_algorithm_ids(self) -> list[str]:
+        value = self.get_parameter("algorithm_ids").value
+        if isinstance(value, str):
+            items = value.split(",")
+        else:
+            items = list(value)
+        algorithms = [str(item).strip() for item in items if str(item).strip()]
+        return algorithms or ["yolov8-road-damage"]
+
+    def _parse_algorithm_text(self, value: str) -> list[str]:
+        text = value.strip()
+        if not text:
+            return []
+        try:
+            loaded = json.loads(text)
+            if isinstance(loaded, list):
+                return [str(item).strip() for item in loaded if str(item).strip()]
+            if isinstance(loaded, dict):
+                raw = loaded.get("algorithm_ids") or loaded.get("algorithms") or []
+                if isinstance(raw, str):
+                    return [item.strip() for item in raw.split(",") if item.strip()]
+                return [str(item).strip() for item in raw if str(item).strip()]
+        except json.JSONDecodeError:
+            pass
+        return [item.strip() for item in text.split(",") if item.strip()]
 
 
 def main(args=None) -> None:
