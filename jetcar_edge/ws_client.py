@@ -34,6 +34,10 @@ class CloudWsClient:
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
+    @property
+    def is_running(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
+
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
             return
@@ -45,6 +49,7 @@ class CloudWsClient:
         self._stop.set()
         if self._thread:
             self._thread.join(timeout=3.0)
+        self.clear()
 
     def update_url(self, url: str) -> None:
         if url == self._url:
@@ -65,6 +70,13 @@ class CloudWsClient:
             except queue.Empty:
                 pass
             self._queue.put_nowait(payload)
+
+    def clear(self) -> None:
+        while True:
+            try:
+                self._queue.get_nowait()
+            except queue.Empty:
+                return
 
     def _run(self) -> None:
         while not self._stop.is_set():

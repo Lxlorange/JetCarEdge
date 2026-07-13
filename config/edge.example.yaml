@@ -11,6 +11,8 @@ scan_topic: /scan
 imu_topic: /imu/data
 ai_enable_topic: /jetcar/ai_enable
 algorithm_control_topic: /jetcar/algorithm_ids
+app_control_host: 0.0.0.0
+app_control_port: 6001
 snapshot_topic: /jetcar/snapshot
 ai_result_topic: /jetcar/ai_result
 emergency_stop_topic: /jetcar/emergency_stop

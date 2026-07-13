@@ -135,6 +135,21 @@ ros2 topic pub /jetcar/algorithm_ids std_msgs/msg/String \
   "{data: '{\"algorithm_ids\":[\"yolov8-road-damage\"]}'}" --once
 ```
 
+The node also exposes a phone-facing AI control TCP port, default `6001`. The
+Flutter app sends one JSON object per line to this port:
+
+```json
+{"type":"jetcar_ai_control","mode":"road_inspection","mask":"TF","car_id":"car_001","stream_id":"camera_front"}
+```
+
+`TF`, `FT`, and `TT` enable manhole, road-damage, or both algorithms. `FF` or an
+empty `algorithm_ids` list disables upload and disconnects the cloud WebSocket.
+Similarity search uses:
+
+```json
+{"type":"jetcar_ai_control","mode":"similarity","algorithm_ids":["yolov5-similarity"],"car_id":"car_001","stream_id":"camera_front"}
+```
+
 ## Message Contract
 
 The edge node sends each video frame to `/ws/video/{car_id}/{stream_id}/edge`:
