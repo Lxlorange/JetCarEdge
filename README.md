@@ -127,6 +127,33 @@ cd /workspace
 source install/setup.bash
 ```
 
+Preferred single-command launch inside the container:
+
+```bash
+docker exec -it jetcar_auto bash
+export ROS_DOMAIN_ID=30
+source /opt/ros/foxy/setup.bash
+cd /workspace
+source install/setup.bash
+
+ros2 launch jetcar_edge edge_bringup.launch.py \
+  cloud_url:=ws://192.168.137.126:8000/ws/video/car_001/camera_front/edge
+```
+
+This starts `astra_camera` and `edge_upload_node` together. It keeps
+`algorithm_ids` empty until the phone sends a mode command, starts the built-in
+frame HTTP server on port `6000`, and keeps Docker orchestration disabled.
+
+If the camera is already running, use:
+
+```bash
+ros2 launch jetcar_edge edge_bringup.launch.py \
+  start_camera:=false \
+  cloud_url:=ws://192.168.137.126:8000/ws/video/car_001/camera_front/edge
+```
+
+Manual two-terminal flow, if launch inclusion fails:
+
 Terminal A, camera:
 
 ```bash
