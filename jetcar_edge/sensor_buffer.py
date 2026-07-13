@@ -65,6 +65,32 @@ class SensorBuffer:
                 "imu": self._imu,
             }
 
+    def front_distance_m(self, half_angle_rad: float = 0.25) -> Optional[float]:
+        with self._lock:
+            lidar = self._lidar
+        if not lidar:
+            return None
+
+        angle_min = float(lidar.get("angle_min", 0.0))
+        angle_increment = float(lidar.get("angle_increment", 0.0))
+        range_min = float(lidar.get("range_min", 0.0))
+        range_max = float(lidar.get("range_max", 0.0))
+        ranges = lidar.get("ranges") or []
+
+        values = []
+        for index, value in enumerate(ranges):
+            if value is None:
+                continue
+            angle = angle_min + index * angle_increment
+            if abs(angle) > half_angle_rad:
+                continue
+            distance = float(value)
+            if range_min <= distance <= range_max:
+                values.append(distance)
+        if not values:
+            return None
+        return min(values)
+
 
 def _stamp_to_seconds(sec: int, nanosec: int) -> float:
     return float(sec) + float(nanosec) / 1_000_000_000.0

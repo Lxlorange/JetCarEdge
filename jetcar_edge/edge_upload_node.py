@@ -5,15 +5,21 @@ import socketserver
 import threading
 import time
 
+from geometry_msgs.msg import Twist
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image, Imu, LaserScan
 from std_msgs.msg import Bool, Empty, String
 
+from jetcar_edge.cloud_result_client import CloudResultClient
+from jetcar_edge.cloud_discovery import CloudDiscoveryConfig, discover_cloud_host
+from jetcar_edge.docker_orchestrator import DockerOrchestrator, DockerProgram
 from jetcar_edge.image_codec import ImageCodec
 from jetcar_edge.models import VideoFrameUpload
+from jetcar_edge.motion_controller import VisualServoConfig, VisualServoController
 from jetcar_edge.safety import SafetyMonitor
 from jetcar_edge.sensor_buffer import SensorBuffer
+from jetcar_edge.similarity_search_controller import SimilaritySearchConfig, SimilaritySearchController
 from jetcar_edge.ws_client import CloudWsClient
 
 
@@ -25,6 +31,10 @@ class EdgeUploadNode(Node):
         self.declare_parameter("stream_id", "camera_front")
         self.declare_parameter("cloud_host", "192.168.137.1")
         self.declare_parameter("cloud_port", 8000)
+        self.declare_parameter("cloud_discovery_enabled", False)
+        self.declare_parameter("cloud_discovery_port", 8765)
+        self.declare_parameter("cloud_discovery_listen_seconds", 2.0)
+        self.declare_parameter("cloud_discovery_service", "JetCarCloud")
         self.declare_parameter(
             "algorithm_ids",
             ["yolov5-manhole-detect", "yolov8-road-damage"],
@@ -43,15 +53,39 @@ class EdgeUploadNode(Node):
         self.declare_parameter("snapshot_topic", "/jetcar/snapshot")
         self.declare_parameter("ai_result_topic", "/jetcar/ai_result")
         self.declare_parameter("emergency_stop_topic", "/jetcar/emergency_stop")
+        self.declare_parameter("cmd_vel_topic", "/cmd_vel")
         self.declare_parameter("upload_fps", 5.0)
         self.declare_parameter("image_width", 640)
         self.declare_parameter("jpeg_quality", 70)
         self.declare_parameter("queue_size", 2)
         self.declare_parameter("danger_distance_m", 1.5)
         self.declare_parameter("reconnect_seconds", 2.0)
+        self.declare_parameter("docker_orchestrator_enabled", False)
+        self.declare_parameter("docker_executable", "docker")
+        self.declare_parameter("autodrive_container", "")
+        self.declare_parameter(
+            "similarity_search_programs",
+            [
+                "ros2 run icar_bringup Mcnamu_driver_X3",
+                "ros2 launch sllidar_ros2 sllidar_launch.py",
+                "ros2 launch astra_camera astra.launch.xml",
+            ],
+        )
+        self.declare_parameter("similarity_match_threshold", 0.45)
+        self.declare_parameter("similarity_auto_stop_on_match", True)
+        self.declare_parameter("similarity_motion_enabled", True)
+        self.declare_parameter("similarity_align_tolerance", 0.12)
+        self.declare_parameter("similarity_target_stop_distance_m", 0.7)
+        self.declare_parameter("similarity_safety_stop_distance_m", 0.35)
+        self.declare_parameter("similarity_lost_timeout_seconds", 3.0)
+        self.declare_parameter("similarity_search_angular_z", 0.22)
+        self.declare_parameter("similarity_align_angular_gain", 0.8)
+        self.declare_parameter("similarity_approach_linear_x", 0.12)
+        self.declare_parameter("similarity_approach_angular_gain", 0.45)
 
         self._car_id = str(self.get_parameter("car_id").value)
         self._stream_id = str(self.get_parameter("stream_id").value)
+        self._cloud_host = self._resolve_cloud_host()
         self._algorithm_ids = self._read_algorithm_ids()
         self._upload_interval = 1.0 / max(float(self.get_parameter("upload_fps").value), 0.1)
         self._last_upload_at = 0.0
@@ -77,6 +111,11 @@ class EdgeUploadNode(Node):
         self._emergency_pub = self.create_publisher(
             Bool,
             str(self.get_parameter("emergency_stop_topic").value),
+            10,
+        )
+        self._cmd_pub = self.create_publisher(
+            Twist,
+            str(self.get_parameter("cmd_vel_topic").value),
             10,
         )
 
@@ -125,13 +164,61 @@ class EdgeUploadNode(Node):
             on_result=self._on_cloud_result,
             on_log=lambda msg: self.get_logger().info(msg),
         )
+        self._cloud_results = CloudResultClient(
+            self._cloud_result_url(),
+            reconnect_seconds=float(self.get_parameter("reconnect_seconds").value),
+            on_result=self._on_cloud_result,
+            on_log=lambda msg: self.get_logger().info(msg),
+        )
+        self._orchestrator = DockerOrchestrator(
+            container=str(self.get_parameter("autodrive_container").value).strip(),
+            programs=self._read_similarity_search_programs(),
+            docker_executable=str(self.get_parameter("docker_executable").value).strip() or "docker",
+            enabled=bool(self.get_parameter("docker_orchestrator_enabled").value),
+            on_log=lambda msg: self.get_logger().info(msg),
+        )
+        self._motion = VisualServoController(
+            config=VisualServoConfig(
+                enabled=bool(self.get_parameter("similarity_motion_enabled").value),
+                cmd_vel_topic=str(self.get_parameter("cmd_vel_topic").value),
+                align_tolerance=float(self.get_parameter("similarity_align_tolerance").value),
+                target_stop_distance_m=float(self.get_parameter("similarity_target_stop_distance_m").value),
+                safety_stop_distance_m=float(self.get_parameter("similarity_safety_stop_distance_m").value),
+                lost_timeout_seconds=float(self.get_parameter("similarity_lost_timeout_seconds").value),
+                search_angular_z=float(self.get_parameter("similarity_search_angular_z").value),
+                align_angular_gain=float(self.get_parameter("similarity_align_angular_gain").value),
+                approach_linear_x=float(self.get_parameter("similarity_approach_linear_x").value),
+                approach_angular_gain=float(self.get_parameter("similarity_approach_angular_gain").value),
+            ),
+            sensor_buffer=self._sensors,
+            cmd_pub=self._cmd_pub,
+            on_log=lambda msg: self.get_logger().info(msg),
+        )
+        self._similarity_controller = SimilaritySearchController(
+            car_id=self._car_id,
+            stream_id=self._stream_id,
+            config=SimilaritySearchConfig(
+                match_threshold=float(self.get_parameter("similarity_match_threshold").value),
+                auto_stop_on_match=bool(self.get_parameter("similarity_auto_stop_on_match").value),
+                stop_on_arrival=bool(self.get_parameter("similarity_auto_stop_on_match").value),
+            ),
+            orchestrator=self._orchestrator,
+            motion=self._motion,
+            result_pub=self._result_pub,
+            stop_ai=lambda reason: self._set_ai_algorithms([], reason=reason),
+            on_log=lambda msg: self.get_logger().info(msg),
+        )
         self._start_control_server()
+        self._cloud_results.start()
+        self.create_timer(0.5, self._on_timer)
         self.get_logger().info(
             f"JetCar edge upload node started stream_id={self._stream_id} upload_enabled={self._upload_enabled}"
         )
 
     def destroy_node(self) -> bool:
         self._stop_control_server()
+        self._similarity_controller.stop(reason="node_destroy")
+        self._cloud_results.stop()
         self._cloud.stop()
         return super().destroy_node()
 
@@ -173,14 +260,23 @@ class EdgeUploadNode(Node):
         self.get_logger().info(f"algorithm_ids updated: {','.join(self._algorithm_ids) or '<none>'}")
 
     def _on_app_control(self, payload: dict) -> dict:
+        mode = str(payload.get("mode") or "").strip().lower()
         algorithms = self._algorithms_from_control(payload)
         self._set_ai_algorithms(algorithms, reason="app_control")
+        if mode in {"similarity", "search"}:
+            self._similarity_controller.start()
+        elif not algorithms:
+            self._similarity_controller.stop(reason="app_control_off")
         return {
             "ok": True,
             "car_id": self._car_id,
             "stream_id": self._stream_id,
             "upload_enabled": self._upload_enabled,
             "algorithm_ids": self._algorithm_ids,
+            "similarity_search": {
+                "active": self._similarity_controller.active,
+                "state": self._similarity_controller.state,
+            },
             "cloud_url": self._cloud_url() if self._algorithm_ids else "",
         }
 
@@ -210,6 +306,7 @@ class EdgeUploadNode(Node):
     def _on_cloud_result(self, result: dict) -> None:
         text = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
         self._result_pub.publish(String(data=text))
+        self._similarity_controller.handle_cloud_result(result)
 
         dangerous = self._safety.is_dangerous(result)
         self._emergency_pub.publish(Bool(data=dangerous))
@@ -220,13 +317,21 @@ class EdgeUploadNode(Node):
         explicit = str(self.get_parameter("cloud_url").value).strip()
         if explicit:
             return explicit
-        host = str(self.get_parameter("cloud_host").value).strip()
+        host = self._cloud_host
         port = int(self.get_parameter("cloud_port").value)
         algorithms = ",".join(self._algorithm_ids)
         return (
             f"ws://{host}:{port}/ws/video/{self._car_id}/{self._stream_id}/edge"
             f"?algorithm_ids={algorithms}&include_image=true"
         )
+
+    def _cloud_result_url(self) -> str:
+        host = self._cloud_host
+        port = int(self.get_parameter("cloud_port").value)
+        return f"ws://{host}:{port}/ws/inference/{self._car_id}/app"
+
+    def _on_timer(self) -> None:
+        self._similarity_controller.tick()
 
     def _start_control_server(self) -> None:
         host = str(self.get_parameter("app_control_host").value).strip()
@@ -282,6 +387,34 @@ class EdgeUploadNode(Node):
             items = list(value)
         algorithms = [str(item).strip() for item in items if str(item).strip()]
         return algorithms or ["yolov8-road-damage"]
+
+    def _read_similarity_search_programs(self) -> list[DockerProgram]:
+        value = self.get_parameter("similarity_search_programs").value
+        if isinstance(value, str):
+            items = [item.strip() for item in value.split(";") if item.strip()]
+        else:
+            items = [str(item).strip() for item in list(value) if str(item).strip()]
+        return [
+            DockerProgram(name=f"similarity_search_{index}", command=command, required=False)
+            for index, command in enumerate(items)
+        ]
+
+    def _resolve_cloud_host(self) -> str:
+        configured = str(self.get_parameter("cloud_host").value).strip()
+        discovered = discover_cloud_host(
+            CloudDiscoveryConfig(
+                enabled=bool(self.get_parameter("cloud_discovery_enabled").value),
+                port=int(self.get_parameter("cloud_discovery_port").value),
+                listen_seconds=float(self.get_parameter("cloud_discovery_listen_seconds").value),
+                service_name=str(self.get_parameter("cloud_discovery_service").value),
+            )
+        )
+        if discovered:
+            self.get_logger().info(f"discovered cloud host {discovered}")
+            return discovered
+        if bool(self.get_parameter("cloud_discovery_enabled").value):
+            self.get_logger().warning(f"cloud discovery timed out; using configured host {configured}")
+        return configured
 
     def _parse_algorithm_text(self, value: str) -> list[str]:
         text = value.strip()

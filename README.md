@@ -30,6 +30,8 @@ JetCarEdge/
     safety.py               Local danger decision helper
     sensor_buffer.py        Latest lidar/IMU cache
     ws_client.py            Reconnecting WebSocket worker
+    motion_controller.py    Similarity visual-servo target alignment/approach
+    cloud_discovery.py      Optional UDP Cloud IP discovery
   config/
     edge.example.yaml       Example runtime configuration
   resource/
@@ -118,6 +120,19 @@ ws://<cloud_host>:<cloud_port>/ws/video/<car_id>/<stream_id>/edge?algorithm_ids=
 
 Set `cloud_url` only when you need to override the generated URL.
 
+If Cloud is configured to broadcast a local discovery beacon, Edge can discover
+the Cloud IP at startup:
+
+```bash
+ros2 run jetcar_edge edge_upload_node \
+  --ros-args \
+  -p cloud_discovery_enabled:=true \
+  -p cloud_discovery_port:=8765
+```
+
+If no beacon is received within `cloud_discovery_listen_seconds`, Edge falls
+back to the configured `cloud_host`.
+
 Useful control topics:
 
 ```bash
@@ -149,6 +164,46 @@ Similarity search uses:
 ```json
 {"type":"jetcar_ai_control","mode":"similarity","algorithm_ids":["yolov5-similarity"],"car_id":"car_001","stream_id":"camera_front"}
 ```
+
+For automatic similarity search, Edge can call the existing Docker/ROS programs
+from the Jetson operation manual. Fill the real container name or ID prefix in
+`autodrive_container`, then enable the orchestrator:
+
+```yaml
+docker_orchestrator_enabled: true
+autodrive_container: "2169"
+similarity_search_programs:
+  - ros2 run icar_bringup Mcnamu_driver_X3
+  - ros2 launch sllidar_ros2 sllidar_launch.py
+  - ros2 run icar_laser laser_Avoidance_a1_X3
+  - ros2 launch astra_camera astra.launch.xml
+```
+
+When the phone starts `mode=similarity`, Edge runs:
+
+```text
+docker start <autodrive_container>
+docker exec -d <autodrive_container> bash -lc "<program>"
+```
+
+This intentionally reuses the manual's existing chassis, lidar avoidance, and
+camera programs instead of reimplementing the device bring-up path. For the
+similarity target itself, Edge publishes `/cmd_vel` from Cloud's `center_norm`
+result: first rotate to center the target, then approach slowly, and stop when
+the front lidar distance reaches `similarity_target_stop_distance_m` or the
+safety distance is crossed. Keep `docker_orchestrator_enabled=false` while
+debugging the camera and Cloud path only.
+
+The default `similarity_search_programs` intentionally starts chassis, lidar,
+and camera only. If you want to use the manual's autonomous lidar avoidance node
+as well, add this line back in your YAML:
+
+```yaml
+  - ros2 run icar_laser laser_Avoidance_a1_X3
+```
+
+Avoid running another node that publishes conflicting `/cmd_vel` commands unless
+you have verified its arbitration behavior on the real car.
 
 ## Message Contract
 
