@@ -6,6 +6,7 @@ import socketserver
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib import request
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from geometry_msgs.msg import Twist
@@ -220,6 +221,7 @@ class EdgeUploadNode(Node):
             motion=self._motion,
             result_pub=self._result_pub,
             stop_ai=lambda reason: self._set_ai_algorithms([], reason=reason),
+            report_event=self._report_edge_event,
             on_log=lambda msg: self.get_logger().info(msg),
         )
         self._start_control_server()
@@ -353,6 +355,50 @@ class EdgeUploadNode(Node):
         host = self._cloud_host
         port = int(self.get_parameter("cloud_port").value)
         return f"ws://{host}:{port}/ws/inference/{self._car_id}/app"
+
+    def _cloud_edge_event_url(self) -> str:
+        host = self._cloud_host
+        port = int(self.get_parameter("cloud_port").value)
+        return f"http://{host}:{port}/api/edge/events"
+
+    def _report_edge_event(self, event: str, payload: dict) -> None:
+        if event not in {
+            "search_started",
+            "target_tracking",
+            "target_found",
+            "search_stopped",
+            "search_warning",
+            "motion_update",
+        }:
+            return
+        threading.Thread(
+            target=self._post_edge_event,
+            args=(event, payload),
+            name=f"jetcar-edge-event-{event}",
+            daemon=True,
+        ).start()
+
+    def _post_edge_event(self, event: str, payload: dict) -> None:
+        try:
+            body = json.dumps(
+                {
+                    "car_id": self._car_id,
+                    "stream_id": self._stream_id,
+                    "event": event,
+                    "payload": payload,
+                },
+                ensure_ascii=False,
+            ).encode("utf-8")
+            req = request.Request(
+                self._cloud_edge_event_url(),
+                data=body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with request.urlopen(req, timeout=2.0) as response:
+                response.read()
+        except Exception as exc:
+            self.get_logger().warning(f"failed to report edge event {event}: {exc}")
 
     def _on_timer(self) -> None:
         self._similarity_controller.tick()

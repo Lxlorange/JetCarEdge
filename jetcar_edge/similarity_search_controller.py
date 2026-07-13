@@ -13,6 +13,7 @@ from jetcar_edge.motion_controller import VisualServoController
 
 LogFn = Callable[[str], None]
 StopAiFn = Callable[[str], None]
+ReportEventFn = Callable[[str, Dict[str, Any]], None]
 
 
 @dataclass
@@ -36,6 +37,7 @@ class SimilaritySearchController:
         motion: VisualServoController,
         result_pub,
         stop_ai: StopAiFn,
+        report_event: Optional[ReportEventFn] = None,
         on_log: Optional[LogFn] = None,
     ) -> None:
         self._car_id = car_id
@@ -45,6 +47,7 @@ class SimilaritySearchController:
         self._motion = motion
         self._result_pub = result_pub
         self._stop_ai = stop_ai
+        self._report_event = report_event
         self._on_log = on_log or (lambda _msg: None)
         self._active = False
         self._state = "idle"
@@ -157,6 +160,11 @@ class SimilaritySearchController:
             **payload,
         }
         self._result_pub.publish(String(data=json.dumps(message, ensure_ascii=False, separators=(",", ":"))))
+        if self._report_event is not None:
+            try:
+                self._report_event(event, message)
+            except Exception as exc:
+                self._on_log(f"failed to report edge event {event}: {exc}")
 
 
 def _as_bool(value: Any) -> bool:
