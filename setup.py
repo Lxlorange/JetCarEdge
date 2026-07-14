@@ -24,6 +24,7 @@ setup(
         "console_scripts": [
             "edge_upload_node = jetcar_edge.edge_upload_node:main",
             "remote_bridge_node = jetcar_edge.remote_bridge_node:main",
+            "rosmaster_motion_node = jetcar_edge.rosmaster_motion_node:main",
             "task_orchestrator_node = jetcar_edge.task_orchestrator_node:main",
         ],
     },

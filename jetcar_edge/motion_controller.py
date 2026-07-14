@@ -134,13 +134,17 @@ class VisualServoController:
             }
 
         if front_distance is None:
-            self._state = "waiting_distance"
-            self._publish_stop()
+            angular_z = -x_error * self._config.approach_angular_gain
+            self._state = "approaching"
+            self._publish(self._config.approach_linear_x, angular_z)
             return {
                 "motion_state": self._state,
-                "command": "stop",
-                "reason": "front_distance_unavailable",
+                "command": "approach",
+                "reason": "front_distance_unavailable_use_cautious_step",
                 "center_norm": center_norm,
+                "x_error": round(x_error, 4),
+                "linear_x": self._config.approach_linear_x,
+                "angular_z": round(angular_z, 4),
                 "similarity": similarity,
             }
 

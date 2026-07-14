@@ -14,6 +14,8 @@ def generate_launch_description() -> LaunchDescription:
     camera_topic = LaunchConfiguration("camera_topic")
     start_base = LaunchConfiguration("start_base")
     start_camera = LaunchConfiguration("start_camera")
+    start_motion_driver = LaunchConfiguration("start_motion_driver")
+    rosmaster_serial_port = LaunchConfiguration("rosmaster_serial_port")
     start_remote_bridge = LaunchConfiguration("start_remote_bridge")
     remote_control_port = LaunchConfiguration("remote_control_port")
     app_control_port = LaunchConfiguration("app_control_port")
@@ -64,6 +66,21 @@ def generate_launch_description() -> LaunchDescription:
         ],
     )
 
+    motion_node = Node(
+        package="jetcar_edge",
+        executable="rosmaster_motion_node",
+        name="jetcar_rosmaster_motion",
+        output="screen",
+        condition=IfCondition(start_motion_driver),
+        parameters=[
+            {
+                "cmd_vel_topic": "/cmd_vel",
+                "serial_port": rosmaster_serial_port,
+                "car_type": 1,
+            }
+        ],
+    )
+
     remote_bridge_node = Node(
         package="jetcar_edge",
         executable="remote_bridge_node",
@@ -108,6 +125,8 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("camera_topic", default_value="/camera/color/image_raw"),
             DeclareLaunchArgument("start_base", default_value="true"),
             DeclareLaunchArgument("start_camera", default_value="true"),
+            DeclareLaunchArgument("start_motion_driver", default_value="true"),
+            DeclareLaunchArgument("rosmaster_serial_port", default_value=""),
             DeclareLaunchArgument("start_remote_bridge", default_value="true"),
             DeclareLaunchArgument("remote_control_port", default_value="6000"),
             DeclareLaunchArgument("app_control_port", default_value="0"),
@@ -116,6 +135,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("start_task_orchestrator", default_value="true"),
             base_driver,
             camera_launch,
+            motion_node,
             edge_node,
             remote_bridge_node,
             task_node,
