@@ -22,6 +22,9 @@ def generate_launch_description() -> LaunchDescription:
     frame_server_port = LaunchConfiguration("frame_server_port")
     task_control_port = LaunchConfiguration("task_control_port")
     start_task_orchestrator = LaunchConfiguration("start_task_orchestrator")
+    upload_fps = LaunchConfiguration("upload_fps")
+    image_width = LaunchConfiguration("image_width")
+    jpeg_quality = LaunchConfiguration("jpeg_quality")
 
     base_driver = ExecuteProcess(
         cmd=[
@@ -61,6 +64,9 @@ def generate_launch_description() -> LaunchDescription:
                 "algorithm_ids": "",
                 "app_control_port": app_control_port,
                 "frame_server_port": frame_server_port,
+                "upload_fps": upload_fps,
+                "image_width": image_width,
+                "jpeg_quality": jpeg_quality,
                 "docker_orchestrator_enabled": False,
             }
         ],
@@ -133,6 +139,9 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("frame_server_port", default_value="8100"),
             DeclareLaunchArgument("task_control_port", default_value="6002"),
             DeclareLaunchArgument("start_task_orchestrator", default_value="true"),
+            DeclareLaunchArgument("upload_fps", default_value="3.0"),
+            DeclareLaunchArgument("image_width", default_value="512"),
+            DeclareLaunchArgument("jpeg_quality", default_value="60"),
             base_driver,
             camera_launch,
             motion_node,

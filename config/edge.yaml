@@ -24,9 +24,9 @@ ai_result_topic: /jetcar/ai_result
 emergency_stop_topic: /jetcar/emergency_stop
 cmd_vel_topic: /cmd_vel
 task_status_topic: /jetcar/task_status
-upload_fps: 5.0
-image_width: 640
-jpeg_quality: 70
+upload_fps: 3.0
+image_width: 512
+jpeg_quality: 60
 queue_size: 2
 danger_distance_m: 1.5
 reconnect_seconds: 2.0

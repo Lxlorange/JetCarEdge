@@ -7,6 +7,9 @@ START_CAMERA="${JETCAR_START_CAMERA:-true}"
 START_YAHBOOM_BASE="${JETCAR_START_YAHBOOM_BASE:-false}"
 START_MOTION_DRIVER="${JETCAR_START_MOTION_DRIVER:-true}"
 ROSMASTER_SERIAL_PORT="${JETCAR_ROSMASTER_SERIAL_PORT:-}"
+UPLOAD_FPS="${JETCAR_UPLOAD_FPS:-3.0}"
+IMAGE_WIDTH="${JETCAR_IMAGE_WIDTH:-512}"
+JPEG_QUALITY="${JETCAR_JPEG_QUALITY:-60}"
 LOG_DIR="${JETCAR_LOG_DIR:-/tmp/jetcar_edge_logs}"
 
 mkdir -p "$LOG_DIR"
@@ -71,7 +74,7 @@ cd $WORKSPACE
 source install/setup.bash
 set -u
 echo "[\$(date -Is)] ROS env loaded for edge"
-echo "[\$(date -Is)] cloud_url=$CLOUD_URL start_camera=$START_CAMERA start_motion_driver=$START_MOTION_DRIVER"
+echo "[\$(date -Is)] cloud_url=$CLOUD_URL start_camera=$START_CAMERA start_motion_driver=$START_MOTION_DRIVER upload_fps=$UPLOAD_FPS image_width=$IMAGE_WIDTH jpeg_quality=$JPEG_QUALITY"
 ARGS=(
   "cloud_url:=$CLOUD_URL"
   "start_base:=false"
@@ -79,6 +82,9 @@ ARGS=(
   "start_motion_driver:=$START_MOTION_DRIVER"
   "start_remote_bridge:=true"
   "start_task_orchestrator:=true"
+  "upload_fps:=$UPLOAD_FPS"
+  "image_width:=$IMAGE_WIDTH"
+  "jpeg_quality:=$JPEG_QUALITY"
 )
 if [ -n "$ROSMASTER_SERIAL_PORT" ]; then
   ARGS+=("rosmaster_serial_port:=$ROSMASTER_SERIAL_PORT")
