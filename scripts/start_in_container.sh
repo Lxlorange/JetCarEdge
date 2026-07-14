@@ -7,6 +7,8 @@ START_CAMERA="${JETCAR_START_CAMERA:-true}"
 LOG_DIR="${JETCAR_LOG_DIR:-/tmp/jetcar_edge_logs}"
 
 mkdir -p "$LOG_DIR"
+BASE_RUNNER="$LOG_DIR/run_base.sh"
+EDGE_RUNNER="$LOG_DIR/run_edge.sh"
 
 source_ros_env() {
   set +u
@@ -29,19 +31,30 @@ pkill -f 'yahboom_joy_X3' || true
 export ROS_DOMAIN_ID=30
 source_ros_env
 
-nohup bash -lc "
+cat >"$BASE_RUNNER" <<EOF
+#!/usr/bin/env bash
+set -eo pipefail
+echo "[\$(date -Is)] starting Yahboom base bringup"
 set +u
 export ROS_DOMAIN_ID=30
 source /opt/ros/foxy/setup.bash
 source /root/yahboomcar_ros2_ws/yahboomcar_ws/install/setup.bash
 source $WORKSPACE/install/setup.bash
 set -u
+echo "[\$(date -Is)] ROS env loaded for base"
 ros2 launch yahboomcar_bringup yahboomcar_bringup_X3_launch.py
-" >"$LOG_DIR/base.log" 2>&1 &
+EOF
+chmod +x "$BASE_RUNNER"
+nohup "$BASE_RUNNER" >"$LOG_DIR/base.log" 2>&1 &
+BASE_PID=$!
+echo "$BASE_PID" >"$LOG_DIR/base.pid"
 
 sleep 3
 
-nohup bash -lc "
+cat >"$EDGE_RUNNER" <<EOF
+#!/usr/bin/env bash
+set -eo pipefail
+echo "[\$(date -Is)] starting JetCarEdge"
 set +u
 export ROS_DOMAIN_ID=30
 source /opt/ros/foxy/setup.bash
@@ -49,16 +62,30 @@ source /root/yahboomcar_ros2_ws/yahboomcar_ws/install/setup.bash
 cd $WORKSPACE
 source install/setup.bash
 set -u
+echo "[\$(date -Is)] ROS env loaded for edge"
+echo "[\$(date -Is)] cloud_url=$CLOUD_URL start_camera=$START_CAMERA"
 ros2 launch jetcar_edge edge_bringup.launch.py \
   cloud_url:=$CLOUD_URL \
   start_base:=false \
   start_camera:=$START_CAMERA \
   start_remote_bridge:=true \
   start_task_orchestrator:=true
-" >"$LOG_DIR/edge.log" 2>&1 &
+EOF
+chmod +x "$EDGE_RUNNER"
+nohup "$EDGE_RUNNER" >"$LOG_DIR/edge.log" 2>&1 &
+EDGE_PID=$!
+echo "$EDGE_PID" >"$LOG_DIR/edge.pid"
+
+sleep 2
+if ! ps -p "$EDGE_PID" >/dev/null 2>&1; then
+  echo "JetCarEdge failed to stay running. See $LOG_DIR/edge.log" >&2
+  tail -n 80 "$LOG_DIR/edge.log" >&2 || true
+  exit 1
+fi
 
 echo "JetCar services started."
 echo "Logs:"
 echo "  $LOG_DIR/base.log"
 echo "  $LOG_DIR/edge.log"
 echo "Expected ports: 6000, 6002, 8100"
+ps -ef | grep -E 'edge_bringup|edge_upload|remote_bridge|task_orchestrator|yahboomcar_bringup_X3' | grep -v grep || true
