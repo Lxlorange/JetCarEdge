@@ -91,12 +91,17 @@ class EdgeUploadNode(Node):
         self.declare_parameter("similarity_lost_timeout_seconds", 3.0)
         self.declare_parameter("similarity_step_search_enabled", True)
         self.declare_parameter("similarity_search_angular_z", 0.60)
-        self.declare_parameter("similarity_search_step_seconds", 1.75)
+        self.declare_parameter("similarity_search_step_degrees", 45.0)
+        self.declare_parameter("similarity_search_step_jitter_degrees", 10.0)
+        self.declare_parameter("similarity_search_forward_after_degrees", 330.0)
+        self.declare_parameter("similarity_search_forward_linear_x", 0.08)
+        self.declare_parameter("similarity_search_forward_seconds", 0.8)
         self.declare_parameter("similarity_search_settle_seconds", 0.45)
         self.declare_parameter("similarity_search_result_timeout_seconds", 2.5)
         self.declare_parameter("similarity_align_angular_gain", 0.8)
         self.declare_parameter("similarity_approach_linear_x", 0.08)
         self.declare_parameter("similarity_cautious_approach_linear_x", 0.045)
+        self.declare_parameter("similarity_approach_step_seconds", 0.45)
         self.declare_parameter("similarity_approach_angular_gain", 0.45)
 
         self._car_id = str(self.get_parameter("car_id").value)
@@ -116,6 +121,7 @@ class EdgeUploadNode(Node):
         self._camera_frame_count = 0
         self._last_camera_frame_at = 0.0
         self._last_camera_status_log_at = 0.0
+        self._similarity_frame_inflight = False
 
         self._codec = ImageCodec(
             target_width=int(self.get_parameter("image_width").value),
@@ -218,7 +224,15 @@ class EdgeUploadNode(Node):
                 lost_timeout_seconds=float(self.get_parameter("similarity_lost_timeout_seconds").value),
                 step_search_enabled=bool(self.get_parameter("similarity_step_search_enabled").value),
                 search_angular_z=float(self.get_parameter("similarity_search_angular_z").value),
-                search_step_seconds=float(self.get_parameter("similarity_search_step_seconds").value),
+                search_step_degrees=float(self.get_parameter("similarity_search_step_degrees").value),
+                search_step_jitter_degrees=float(
+                    self.get_parameter("similarity_search_step_jitter_degrees").value
+                ),
+                search_forward_after_degrees=float(
+                    self.get_parameter("similarity_search_forward_after_degrees").value
+                ),
+                search_forward_linear_x=float(self.get_parameter("similarity_search_forward_linear_x").value),
+                search_forward_seconds=float(self.get_parameter("similarity_search_forward_seconds").value),
                 search_settle_seconds=float(self.get_parameter("similarity_search_settle_seconds").value),
                 search_result_timeout_seconds=float(
                     self.get_parameter("similarity_search_result_timeout_seconds").value
@@ -228,6 +242,7 @@ class EdgeUploadNode(Node):
                 cautious_approach_linear_x=float(
                     self.get_parameter("similarity_cautious_approach_linear_x").value
                 ),
+                approach_step_seconds=float(self.get_parameter("similarity_approach_step_seconds").value),
                 approach_angular_gain=float(self.get_parameter("similarity_approach_angular_gain").value),
             ),
             sensor_buffer=self._sensors,
@@ -279,6 +294,7 @@ class EdgeUploadNode(Node):
         algorithms = self._parse_algorithm_text(msg.data)
         if not algorithms:
             self._set_ai_algorithms([], reason="ros_algorithm_ids_empty")
+            self._similarity_frame_inflight = False
             self._similarity_controller.stop(reason="ros_algorithm_ids_empty")
             return
         self._set_ai_algorithms(algorithms, reason="ros_algorithm_ids")
@@ -312,6 +328,7 @@ class EdgeUploadNode(Node):
             self._set_ai_enabled(bool(algorithms), reason=reason)
             return
         self._algorithm_ids = algorithms
+        self._similarity_frame_inflight = False
         if algorithms:
             self._cloud.update_url(self._cloud_url())
             self._set_ai_enabled(True, reason=reason)
@@ -366,6 +383,8 @@ class EdgeUploadNode(Node):
                     image=encoded,
                 )
                 self._cloud.submit(frame.to_dict())
+                if should_upload and "yolov5-similarity" in self._algorithm_ids:
+                    self._similarity_frame_inflight = True
                 self.get_logger().info(
                     f"frame queued for cloud upload: {encoded.width}x{encoded.height}"
                 )
@@ -376,13 +395,18 @@ class EdgeUploadNode(Node):
         if "yolov5-similarity" not in self._algorithm_ids:
             return True
         state = self._similarity_controller.motion_state
-        if state in {"step_rotating", "settling"}:
+        if state in {"step_rotating", "search_forward", "approach_forward", "settling"}:
+            self._similarity_frame_inflight = False
+            return False
+        if state == "waiting_result" and self._similarity_frame_inflight:
             return False
         return True
 
     def _on_cloud_result(self, result: dict) -> None:
         text = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
         self._result_pub.publish(String(data=text))
+        if str(result.get("algorithm_id") or "") == "yolov5-similarity":
+            self._similarity_frame_inflight = False
         self._similarity_controller.handle_cloud_result(result)
 
         dangerous = self._safety.is_dangerous(result)
