@@ -14,6 +14,8 @@ def generate_launch_description() -> LaunchDescription:
     camera_topic = LaunchConfiguration("camera_topic")
     start_base = LaunchConfiguration("start_base")
     start_camera = LaunchConfiguration("start_camera")
+    start_remote_bridge = LaunchConfiguration("start_remote_bridge")
+    remote_control_port = LaunchConfiguration("remote_control_port")
     frame_server_port = LaunchConfiguration("frame_server_port")
     task_control_port = LaunchConfiguration("task_control_port")
     start_task_orchestrator = LaunchConfiguration("start_task_orchestrator")
@@ -60,6 +62,21 @@ def generate_launch_description() -> LaunchDescription:
         ],
     )
 
+    remote_bridge_node = Node(
+        package="jetcar_edge",
+        executable="remote_bridge_node",
+        name="jetcar_remote_bridge",
+        output="screen",
+        condition=IfCondition(start_remote_bridge),
+        parameters=[
+            {
+                "remote_control_port": remote_control_port,
+                "cmd_vel_topic": "/cmd_vel",
+                "snapshot_topic": "/jetcar/snapshot",
+            }
+        ],
+    )
+
     task_node = Node(
         package="jetcar_edge",
         executable="task_orchestrator_node",
@@ -88,12 +105,15 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("camera_topic", default_value="/camera/color/image_raw"),
             DeclareLaunchArgument("start_base", default_value="true"),
             DeclareLaunchArgument("start_camera", default_value="true"),
+            DeclareLaunchArgument("start_remote_bridge", default_value="true"),
+            DeclareLaunchArgument("remote_control_port", default_value="6000"),
             DeclareLaunchArgument("frame_server_port", default_value="8100"),
             DeclareLaunchArgument("task_control_port", default_value="6002"),
             DeclareLaunchArgument("start_task_orchestrator", default_value="true"),
             base_driver,
             camera_launch,
             edge_node,
+            remote_bridge_node,
             task_node,
         ]
     )

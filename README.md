@@ -140,10 +140,10 @@ ros2 launch jetcar_edge edge_bringup.launch.py \
   cloud_url:=ws://192.168.175.90:8000/ws/video/car_001/camera_front/edge
 ```
 
-This starts the Yahboom base driver, `astra_camera`, and `edge_upload_node`
-together. It keeps `algorithm_ids` empty until the phone sends a mode command,
-starts the built-in frame HTTP server on port `8100`, and keeps Docker
-orchestration disabled.
+This starts the Yahboom base driver, `astra_camera`, `edge_upload_node`,
+`task_orchestrator_node`, and the phone-compatible remote bridge on port `6000`.
+The bridge translates the original phone TCP protocol into ROS2 `/cmd_vel`; it
+does not open the Rosmaster serial device directly.
 
 If the base driver or camera is already running, disable that part to avoid
 duplicate nodes:
@@ -153,6 +153,29 @@ ros2 launch jetcar_edge edge_bringup.launch.py \
   start_base:=false \
   start_camera:=false \
   cloud_url:=ws://192.168.175.90:8000/ws/video/car_001/camera_front/edge
+```
+
+For normal demo startup from the Jetson host, prefer the wrapper script:
+
+```bash
+cd /workspace/JetCarEdge
+bash scripts/start_jetcar_all.sh
+```
+
+Stop all JetCarEdge-started services:
+
+```bash
+cd /workspace/JetCarEdge
+bash scripts/stop_jetcar_all.sh
+```
+
+Expected listening ports:
+
+```text
+6000 phone remote bridge
+6001 Edge AI control
+6002 Edge task control
+8100 latest camera frame
 ```
 
 Manual two-terminal flow, if launch inclusion fails:
