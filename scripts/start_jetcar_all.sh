@@ -22,21 +22,25 @@ pkill -f 'yahboom_joy_X3' || true
 "
 
 docker exec -d "$CONTAINER" bash -lc "
+set +u
 export ROS_DOMAIN_ID=30
 source /opt/ros/foxy/setup.bash
 source /root/yahboomcar_ros2_ws/yahboomcar_ws/install/setup.bash
 source $WORKSPACE/install/setup.bash 2>/dev/null || true
+set -u
 ros2 launch yahboomcar_bringup yahboomcar_bringup_X3_launch.py
 "
 
 sleep 3
 
 docker exec -d "$CONTAINER" bash -lc "
+set +u
 export ROS_DOMAIN_ID=30
 source /opt/ros/foxy/setup.bash
 source /root/yahboomcar_ros2_ws/yahboomcar_ws/install/setup.bash
 cd $WORKSPACE
 source install/setup.bash
+set -u
 ros2 launch jetcar_edge edge_bringup.launch.py \
   cloud_url:=$CLOUD_URL \
   start_base:=false \

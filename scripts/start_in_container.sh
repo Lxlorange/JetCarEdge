@@ -8,6 +8,14 @@ LOG_DIR="${JETCAR_LOG_DIR:-/tmp/jetcar_edge_logs}"
 
 mkdir -p "$LOG_DIR"
 
+source_ros_env() {
+  set +u
+  source /opt/ros/foxy/setup.bash
+  source /root/yahboomcar_ros2_ws/yahboomcar_ws/install/setup.bash
+  source "$WORKSPACE/install/setup.bash"
+  set -u
+}
+
 pkill -f 'edge_bringup.launch.py' || true
 pkill -f 'edge_upload_node' || true
 pkill -f 'remote_bridge_node' || true
@@ -19,26 +27,28 @@ pkill -f 'ekf_node' || true
 pkill -f 'yahboom_joy_X3' || true
 
 export ROS_DOMAIN_ID=30
-source /opt/ros/foxy/setup.bash
-source /root/yahboomcar_ros2_ws/yahboomcar_ws/install/setup.bash
-source "$WORKSPACE/install/setup.bash"
+source_ros_env
 
 nohup bash -lc "
+set +u
 export ROS_DOMAIN_ID=30
 source /opt/ros/foxy/setup.bash
 source /root/yahboomcar_ros2_ws/yahboomcar_ws/install/setup.bash
 source $WORKSPACE/install/setup.bash
+set -u
 ros2 launch yahboomcar_bringup yahboomcar_bringup_X3_launch.py
 " >"$LOG_DIR/base.log" 2>&1 &
 
 sleep 3
 
 nohup bash -lc "
+set +u
 export ROS_DOMAIN_ID=30
 source /opt/ros/foxy/setup.bash
 source /root/yahboomcar_ros2_ws/yahboomcar_ws/install/setup.bash
 cd $WORKSPACE
 source install/setup.bash
+set -u
 ros2 launch jetcar_edge edge_bringup.launch.py \
   cloud_url:=$CLOUD_URL \
   start_base:=false \
