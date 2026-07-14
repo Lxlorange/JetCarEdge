@@ -47,7 +47,8 @@ similarity_search_programs:
 # - ros2 run yahboomcar_astra colorTracker
 similarity_match_threshold: 0.70
 similarity_track_confirm_frames: 2
-similarity_found_confirm_frames: 3
+similarity_found_confirm_frames: 2
+similarity_found_center_tolerance: 0.16
 similarity_auto_stop_on_match: true
 similarity_motion_enabled: true
 similarity_align_tolerance: 0.12

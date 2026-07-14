@@ -81,7 +81,8 @@ class EdgeUploadNode(Node):
         )
         self.declare_parameter("similarity_match_threshold", 0.70)
         self.declare_parameter("similarity_track_confirm_frames", 2)
-        self.declare_parameter("similarity_found_confirm_frames", 3)
+        self.declare_parameter("similarity_found_confirm_frames", 2)
+        self.declare_parameter("similarity_found_center_tolerance", 0.16)
         self.declare_parameter("similarity_auto_stop_on_match", True)
         self.declare_parameter("similarity_motion_enabled", True)
         self.declare_parameter("similarity_align_tolerance", 0.12)
@@ -256,6 +257,7 @@ class EdgeUploadNode(Node):
                 match_threshold=float(self.get_parameter("similarity_match_threshold").value),
                 track_confirm_frames=int(self.get_parameter("similarity_track_confirm_frames").value),
                 found_confirm_frames=int(self.get_parameter("similarity_found_confirm_frames").value),
+                found_center_tolerance=float(self.get_parameter("similarity_found_center_tolerance").value),
                 auto_stop_on_match=bool(self.get_parameter("similarity_auto_stop_on_match").value),
                 stop_on_arrival=bool(self.get_parameter("similarity_auto_stop_on_match").value),
             ),

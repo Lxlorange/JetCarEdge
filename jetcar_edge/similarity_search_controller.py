@@ -21,7 +21,8 @@ class SimilaritySearchConfig:
     algorithm_id: str = "yolov5-similarity"
     match_threshold: float = 0.70
     track_confirm_frames: int = 2
-    found_confirm_frames: int = 3
+    found_confirm_frames: int = 2
+    found_center_tolerance: float = 0.16
     stale_result_seconds: float = 5.0
     auto_stop_on_match: bool = True
     start_docker_on_search: bool = True
@@ -125,6 +126,46 @@ class SimilaritySearchController:
 
         motion_input = dict(result)
         motion_input["matched"] = self._match_streak >= self._config.track_confirm_frames
+
+        if (
+            confirmed_match
+            and self._match_streak >= self._config.found_confirm_frames
+            and _center_aligned(center_norm, self._config.found_center_tolerance)
+        ):
+            self._state = "found"
+            self._motion.stop(reason="target_center_aligned")
+            motion = {
+                "motion_state": "arrived",
+                "command": "stop",
+                "reason": "target_center_aligned",
+                "center_norm": center_norm,
+                "similarity": similarity,
+            }
+            self._publish_event(
+                "search_result",
+                {
+                    "matched": matched,
+                    "similarity": similarity,
+                    "center_norm": center_norm,
+                    "confirmed_match": confirmed_match,
+                    "match_streak": self._match_streak,
+                    "latency_ms": message.get("latency_ms"),
+                    "motion": motion,
+                },
+            )
+            self._publish_event(
+                "target_found",
+                {
+                    "similarity": similarity,
+                    "center_norm": center_norm,
+                    "match_streak": self._match_streak,
+                    "motion": motion,
+                    "final_image": message.get("annotated_image"),
+                },
+            )
+            self._stop_ai("target_center_aligned")
+            self.stop(reason="target_center_aligned")
+            return
 
         if motion_input["matched"] and self._motion_on_match_only and not self._motion.active:
             self._state = "target_locked"
@@ -236,3 +277,12 @@ def _as_float(value: Any, default: float) -> float:
         except ValueError:
             return default
     return default
+
+
+def _center_aligned(value: Any, tolerance: float) -> bool:
+    if not isinstance(value, (list, tuple)) or len(value) < 2:
+        return False
+    x = _as_float(value[0], -1.0)
+    if x < 0.0:
+        return False
+    return abs(max(0.0, min(1.0, x)) - 0.5) <= max(0.0, float(tolerance))
