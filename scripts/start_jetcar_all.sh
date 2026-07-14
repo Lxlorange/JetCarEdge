@@ -50,4 +50,4 @@ ros2 launch jetcar_edge edge_bringup.launch.py \
 "
 
 echo "JetCar services requested in container $CONTAINER"
-echo "Expected ports after startup: 6000(remote), 6001(ai), 6002(task), 8100(frame)"
+echo "Expected ports after startup: 6000(remote), 6002(task), 8100(frame)"

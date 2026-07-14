@@ -16,6 +16,7 @@ def generate_launch_description() -> LaunchDescription:
     start_camera = LaunchConfiguration("start_camera")
     start_remote_bridge = LaunchConfiguration("start_remote_bridge")
     remote_control_port = LaunchConfiguration("remote_control_port")
+    app_control_port = LaunchConfiguration("app_control_port")
     frame_server_port = LaunchConfiguration("frame_server_port")
     task_control_port = LaunchConfiguration("task_control_port")
     start_task_orchestrator = LaunchConfiguration("start_task_orchestrator")
@@ -56,6 +57,7 @@ def generate_launch_description() -> LaunchDescription:
                 "cloud_url": cloud_url,
                 "camera_topic": camera_topic,
                 "algorithm_ids": "",
+                "app_control_port": app_control_port,
                 "frame_server_port": frame_server_port,
                 "docker_orchestrator_enabled": False,
             }
@@ -107,6 +109,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("start_camera", default_value="true"),
             DeclareLaunchArgument("start_remote_bridge", default_value="true"),
             DeclareLaunchArgument("remote_control_port", default_value="6000"),
+            DeclareLaunchArgument("app_control_port", default_value="0"),
             DeclareLaunchArgument("frame_server_port", default_value="8100"),
             DeclareLaunchArgument("task_control_port", default_value="6002"),
             DeclareLaunchArgument("start_task_orchestrator", default_value="true"),

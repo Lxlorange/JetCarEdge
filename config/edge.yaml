@@ -14,7 +14,7 @@ imu_topic: /imu/data
 ai_enable_topic: /jetcar/ai_enable
 algorithm_control_topic: /jetcar/algorithm_ids
 app_control_host: 0.0.0.0
-app_control_port: 6001
+app_control_port: 0
 task_control_host: 0.0.0.0
 task_control_port: 6002
 frame_server_host: 0.0.0.0

@@ -173,10 +173,13 @@ Expected listening ports:
 
 ```text
 6000 phone remote bridge
-6001 Edge AI control
 6002 Edge task control
 8100 latest camera frame
 ```
+
+The legacy Edge AI control port is disabled by default. Current phone workflows
+switch algorithms through the task control service on `6002`, so the edge upload
+node no longer needs to bind `6001`.
 
 Manual two-terminal flow, if launch inclusion fails:
 
