@@ -284,8 +284,11 @@ def _parse_packet(packet: str) -> dict[str, Any]:
     if len(hex_text) < 8 or len(hex_text) % 2 != 0:
         raise ValueError("invalid packet length")
     values = [int(hex_text[index : index + 2], 16) for index in range(0, len(hex_text), 2)]
-    payload_len = values[2] - 2
-    if payload_len < 0 or payload_len != len(values) - 4:
+    payload_hex_len = values[2] - 2
+    if payload_hex_len < 0 or payload_hex_len % 2 != 0:
+        raise ValueError("invalid payload length field")
+    payload_len = payload_hex_len // 2
+    if payload_len != len(values) - 4:
         raise ValueError("payload length mismatch")
     checksum = sum(values[:-1]) % 256
     if checksum != values[-1]:
@@ -301,7 +304,7 @@ def _encode_packet(car_type: int, cmd: str, payload: list[int]) -> str:
     values = [
         int(car_type) & 0xFF,
         int(cmd, 16) & 0xFF,
-        (len(payload) + 2) & 0xFF,
+        (len(payload) * 2 + 2) & 0xFF,
         *[int(item) & 0xFF for item in payload],
     ]
     values.append(sum(values) % 256)
