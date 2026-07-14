@@ -263,52 +263,30 @@ Stop AI upload:
 printf '{"type":"jetcar_ai_control","mode":"off","car_id":"car_001","stream_id":"camera_front","algorithm_ids":[]}\n' | nc 127.0.0.1 6001
 ```
 
-For automatic similarity search, Edge can call the existing Docker/ROS programs
-from the Jetson operation manual. Fill the real container name or ID prefix in
-`autodrive_container`, then enable the orchestrator:
+Automatic similarity search is now a simple visual closed loop, not a map
+navigation task. The phone starts `mode=similarity` on port `6001` or
+`mode=similarity_search_task` on port `6002`; Edge then enables
+`yolov5-similarity`, uploads camera frames to Cloud, and publishes `/cmd_vel`
+from Cloud's `center_norm` result.
 
-```yaml
-docker_orchestrator_enabled: true
-autodrive_container: "2169"
-docker_command_prefix: "source /opt/ros/foxy/setup.bash"
-similarity_search_programs:
-  - ros2 run yahboomcar_bringup Mcnamu_driver_X3
-  - ros2 launch sllidar_ros2 sllidar_launch.py
-  - ros2 launch astra_camera astra.launch.xml
-```
+Behavior:
 
-When the phone starts `mode=similarity`, Edge runs:
+- target not visible: rotate in place to scan;
+- target visible but off-center: rotate to align it;
+- target centered and safe: approach slowly;
+- target close enough or front lidar distance unsafe: stop and send a
+  `target_found` event with a final image for the phone.
 
-```text
-docker start <autodrive_container>
-docker exec -d <autodrive_container> bash -lc "<program>"
-```
+This path does not require Nav2, `/navigate_to_pose`, AMCL, a static map, or
+waypoints. It still expects the real car stack to provide:
 
-This intentionally reuses the manual's existing chassis, lidar avoidance, and
-camera programs instead of reimplementing the device bring-up path. For the
-similarity target itself, Edge publishes `/cmd_vel` from Cloud's `center_norm`
-result: first rotate to center the target, then approach slowly, and stop when
-the front lidar distance reaches `similarity_target_stop_distance_m` or the
-safety distance is crossed. Keep `docker_orchestrator_enabled=false` while
-debugging the camera and Cloud path only.
+- a base driver subscribing `/cmd_vel`;
+- a lidar publishing `/scan` for front-distance safety;
+- a camera publishing `/camera/color/image_raw`;
+- Cloud running the `yolov5-similarity` algorithm.
 
-The default `similarity_search_programs` intentionally starts chassis, lidar,
-and camera only. The manual's `colorHSV` and `colorTracker` are HSV/color
-tracking demos; they cannot directly track an arbitrary uploaded phone image
-unless their source is changed to consume Cloud's feature/center result. For the
-uploaded-image similarity target, Edge uses Cloud's `center_norm` and publishes
-`/cmd_vel` itself.
-
-The manual's autonomous lidar avoidance node can be useful, but do not enable it
-until you know whether it also publishes `/cmd_vel`. If it does, it may conflict
-with the visual-servo controller:
-
-```yaml
-  - ros2 run yahboomcar_laser laser_Avoidance_a1_X3
-```
-
-Avoid running another node that publishes conflicting `/cmd_vel` commands unless
-you have verified its arbitration behavior on the real car.
+Do not run another node that publishes conflicting `/cmd_vel` commands during
+similarity search unless command arbitration has been verified on the real car.
 
 ### Debug Docker Commands On The Car
 

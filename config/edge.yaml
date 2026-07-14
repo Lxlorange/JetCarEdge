@@ -24,10 +24,6 @@ ai_result_topic: /jetcar/ai_result
 emergency_stop_topic: /jetcar/emergency_stop
 cmd_vel_topic: /cmd_vel
 task_status_topic: /jetcar/task_status
-amcl_pose_topic: /amcl_pose
-navigate_action: /navigate_to_pose
-waypoints_file: /workspace/install/jetcar_edge/share/jetcar_edge/config/waypoints.yaml
-default_goal_timeout_seconds: 90.0
 upload_fps: 5.0
 image_width: 640
 jpeg_quality: 70

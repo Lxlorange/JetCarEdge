@@ -263,7 +263,7 @@ class EdgeUploadNode(Node):
             return
         self._set_ai_algorithms(algorithms, reason="ros_algorithm_ids")
         if "yolov5-similarity" in algorithms:
-            self._similarity_controller.start(motion_on_match_only=True)
+            self._similarity_controller.start()
         else:
             self._similarity_controller.stop(reason="ros_algorithm_ids_without_similarity")
 
@@ -393,6 +393,11 @@ class EdgeUploadNode(Node):
             "task_status",
         }:
             return
+        if event == "target_found" and not payload.get("final_image"):
+            final_image = self._latest_image_payload()
+            if final_image is not None:
+                payload = dict(payload)
+                payload["final_image"] = final_image
         threading.Thread(
             target=self._post_edge_event,
             args=(event, payload),
@@ -546,6 +551,15 @@ class EdgeUploadNode(Node):
     def _latest_jpeg_bytes(self):
         with self._latest_jpeg_lock:
             return self._latest_jpeg
+
+    def _latest_image_payload(self):
+        data = self._latest_jpeg_bytes()
+        if data is None:
+            return None
+        return {
+            "encoding": "jpeg",
+            "data": base64.b64encode(data).decode("ascii"),
+        }
 
     def _read_algorithm_ids(self) -> list[str]:
         value = self.get_parameter("algorithm_ids").value

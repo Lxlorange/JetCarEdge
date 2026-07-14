@@ -141,7 +141,12 @@ class SimilaritySearchController:
                 self._state = "found"
                 self._publish_event(
                     "target_found",
-                    {"similarity": similarity, "center_norm": center_norm, "motion": motion},
+                    {
+                        "similarity": similarity,
+                        "center_norm": center_norm,
+                        "motion": motion,
+                        "final_image": message.get("annotated_image"),
+                    },
                 )
                 self._stop_ai("target_found")
                 self.stop(reason="target_found")
