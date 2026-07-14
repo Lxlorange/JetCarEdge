@@ -45,14 +45,20 @@ similarity_search_programs:
 # - ros2 run yahboomcar_laser laser_Avoidance_a1_X3
 # - ros2 run yahboomcar_astra colorHSV
 # - ros2 run yahboomcar_astra colorTracker
-similarity_match_threshold: 0.45
+similarity_match_threshold: 0.70
+similarity_track_confirm_frames: 2
+similarity_found_confirm_frames: 3
 similarity_auto_stop_on_match: true
 similarity_motion_enabled: true
 similarity_align_tolerance: 0.12
 similarity_target_stop_distance_m: 0.7
 similarity_safety_stop_distance_m: 0.35
 similarity_lost_timeout_seconds: 3.0
-similarity_search_angular_z: 0.22
+similarity_step_search_enabled: true
+similarity_search_angular_z: 0.08
+similarity_search_step_seconds: 0.75
+similarity_search_settle_seconds: 0.45
+similarity_search_result_timeout_seconds: 2.5
 similarity_align_angular_gain: 0.8
 similarity_approach_linear_x: 0.12
 similarity_approach_angular_gain: 0.45

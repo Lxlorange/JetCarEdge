@@ -79,14 +79,20 @@ class EdgeUploadNode(Node):
                 "ros2 launch astra_camera astra.launch.xml",
             ],
         )
-        self.declare_parameter("similarity_match_threshold", 0.45)
+        self.declare_parameter("similarity_match_threshold", 0.70)
+        self.declare_parameter("similarity_track_confirm_frames", 2)
+        self.declare_parameter("similarity_found_confirm_frames", 3)
         self.declare_parameter("similarity_auto_stop_on_match", True)
         self.declare_parameter("similarity_motion_enabled", True)
         self.declare_parameter("similarity_align_tolerance", 0.12)
         self.declare_parameter("similarity_target_stop_distance_m", 0.7)
         self.declare_parameter("similarity_safety_stop_distance_m", 0.35)
         self.declare_parameter("similarity_lost_timeout_seconds", 3.0)
-        self.declare_parameter("similarity_search_angular_z", 0.22)
+        self.declare_parameter("similarity_step_search_enabled", True)
+        self.declare_parameter("similarity_search_angular_z", 0.08)
+        self.declare_parameter("similarity_search_step_seconds", 0.75)
+        self.declare_parameter("similarity_search_settle_seconds", 0.45)
+        self.declare_parameter("similarity_search_result_timeout_seconds", 2.5)
         self.declare_parameter("similarity_align_angular_gain", 0.8)
         self.declare_parameter("similarity_approach_linear_x", 0.12)
         self.declare_parameter("similarity_approach_angular_gain", 0.45)
@@ -207,7 +213,13 @@ class EdgeUploadNode(Node):
                 target_stop_distance_m=float(self.get_parameter("similarity_target_stop_distance_m").value),
                 safety_stop_distance_m=float(self.get_parameter("similarity_safety_stop_distance_m").value),
                 lost_timeout_seconds=float(self.get_parameter("similarity_lost_timeout_seconds").value),
+                step_search_enabled=bool(self.get_parameter("similarity_step_search_enabled").value),
                 search_angular_z=float(self.get_parameter("similarity_search_angular_z").value),
+                search_step_seconds=float(self.get_parameter("similarity_search_step_seconds").value),
+                search_settle_seconds=float(self.get_parameter("similarity_search_settle_seconds").value),
+                search_result_timeout_seconds=float(
+                    self.get_parameter("similarity_search_result_timeout_seconds").value
+                ),
                 align_angular_gain=float(self.get_parameter("similarity_align_angular_gain").value),
                 approach_linear_x=float(self.get_parameter("similarity_approach_linear_x").value),
                 approach_angular_gain=float(self.get_parameter("similarity_approach_angular_gain").value),
@@ -221,6 +233,8 @@ class EdgeUploadNode(Node):
             stream_id=self._stream_id,
             config=SimilaritySearchConfig(
                 match_threshold=float(self.get_parameter("similarity_match_threshold").value),
+                track_confirm_frames=int(self.get_parameter("similarity_track_confirm_frames").value),
+                found_confirm_frames=int(self.get_parameter("similarity_found_confirm_frames").value),
                 auto_stop_on_match=bool(self.get_parameter("similarity_auto_stop_on_match").value),
                 stop_on_arrival=bool(self.get_parameter("similarity_auto_stop_on_match").value),
             ),
@@ -326,6 +340,8 @@ class EdgeUploadNode(Node):
         now = time.monotonic()
         due = now - self._last_upload_at >= self._upload_interval
         should_upload = self._upload_enabled and due
+        if should_upload and not self._should_upload_for_current_motion_state():
+            should_upload = False
         should_cache = self._frame_server is not None
         if not should_upload and not self._snapshot_requested and not should_cache:
             return
@@ -349,6 +365,14 @@ class EdgeUploadNode(Node):
                 )
         except Exception as exc:
             self.get_logger().warning(f"failed to process camera frame: {exc}")
+
+    def _should_upload_for_current_motion_state(self) -> bool:
+        if "yolov5-similarity" not in self._algorithm_ids:
+            return True
+        state = self._similarity_controller.motion_state
+        if state in {"step_rotating", "settling"}:
+            return False
+        return True
 
     def _on_cloud_result(self, result: dict) -> None:
         text = json.dumps(result, ensure_ascii=False, separators=(",", ":"))

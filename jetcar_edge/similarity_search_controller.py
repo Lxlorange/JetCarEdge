@@ -19,7 +19,9 @@ ReportEventFn = Callable[[str, Dict[str, Any]], None]
 @dataclass
 class SimilaritySearchConfig:
     algorithm_id: str = "yolov5-similarity"
-    match_threshold: float = 0.45
+    match_threshold: float = 0.70
+    track_confirm_frames: int = 2
+    found_confirm_frames: int = 3
     stale_result_seconds: float = 5.0
     auto_stop_on_match: bool = True
     start_docker_on_search: bool = True
@@ -54,6 +56,7 @@ class SimilaritySearchController:
         self._started_at = 0.0
         self._last_result_at = 0.0
         self._motion_on_match_only = False
+        self._match_streak = 0
 
     @property
     def active(self) -> bool:
@@ -62,6 +65,10 @@ class SimilaritySearchController:
     @property
     def state(self) -> str:
         return self._state
+
+    @property
+    def motion_state(self) -> str:
+        return self._motion.state
 
     def start(self, *, motion_on_match_only: bool = False) -> None:
         if self._active:
@@ -72,6 +79,7 @@ class SimilaritySearchController:
         self._started_at = time.time()
         self._last_result_at = 0.0
         self._motion_on_match_only = motion_on_match_only
+        self._match_streak = 0
         if self._config.start_docker_on_search:
             self._orchestrator.start_stack()
         if not self._motion_on_match_only:
@@ -109,13 +117,23 @@ class SimilaritySearchController:
         matched = _as_bool(result.get("matched"))
         similarity = _as_float(result.get("similarity"), 0.0)
         center_norm = result.get("center_norm")
-        if matched and self._motion_on_match_only and not self._motion.active:
+        confirmed_match = matched and similarity >= self._config.match_threshold
+        if confirmed_match:
+            self._match_streak += 1
+        else:
+            self._match_streak = 0
+
+        motion_input = dict(result)
+        motion_input["matched"] = self._match_streak >= self._config.track_confirm_frames
+
+        if motion_input["matched"] and self._motion_on_match_only and not self._motion.active:
             self._state = "target_locked"
             self._publish_event(
                 "target_tracking",
                 {
                     "similarity": similarity,
                     "center_norm": center_norm,
+                    "match_streak": self._match_streak,
                     "motion": {
                         "motion_state": "pending_visual_servo",
                         "command": "cancel_nav_then_start_visual_servo",
@@ -124,18 +142,20 @@ class SimilaritySearchController:
             )
             time.sleep(0.2)
             self._motion.start()
-        motion = self._motion.handle_similarity_result(result)
+        motion = self._motion.handle_similarity_result(motion_input)
         self._publish_event(
             "search_result",
             {
                 "matched": matched,
                 "similarity": similarity,
                 "center_norm": center_norm,
+                "confirmed_match": confirmed_match,
+                "match_streak": self._match_streak,
                 "latency_ms": message.get("latency_ms"),
                 "motion": motion,
             },
         )
-        if matched and similarity >= self._config.match_threshold:
+        if confirmed_match and self._match_streak >= self._config.found_confirm_frames:
             motion_state = str(motion.get("motion_state") or "")
             if motion_state in {"arrived", "safety_stop"} and self._config.stop_on_arrival:
                 self._state = "found"
@@ -144,6 +164,7 @@ class SimilaritySearchController:
                     {
                         "similarity": similarity,
                         "center_norm": center_norm,
+                        "match_streak": self._match_streak,
                         "motion": motion,
                         "final_image": message.get("annotated_image"),
                     },
@@ -154,7 +175,12 @@ class SimilaritySearchController:
                 self._state = "approaching"
                 self._publish_event(
                     "target_tracking",
-                    {"similarity": similarity, "center_norm": center_norm, "motion": motion},
+                    {
+                        "similarity": similarity,
+                        "center_norm": center_norm,
+                        "match_streak": self._match_streak,
+                        "motion": motion,
+                    },
                 )
                 if motion_state == "disabled" and self._config.auto_stop_on_match:
                     self._stop_ai("target_found_motion_disabled")

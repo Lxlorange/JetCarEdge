@@ -20,7 +20,11 @@ class VisualServoConfig:
     target_stop_distance_m: float = 0.7
     safety_stop_distance_m: float = 0.35
     lost_timeout_seconds: float = 3.0
-    search_angular_z: float = 0.22
+    search_angular_z: float = 0.18
+    step_search_enabled: bool = True
+    search_step_seconds: float = 0.65
+    search_settle_seconds: float = 0.35
+    search_result_timeout_seconds: float = 3.0
     align_angular_gain: float = 0.8
     approach_linear_x: float = 0.12
     approach_angular_gain: float = 0.45
@@ -44,6 +48,8 @@ class VisualServoController:
         self._state = "idle"
         self._last_target_at = 0.0
         self._last_command_at = 0.0
+        self._state_started_at = 0.0
+        self._last_result_at = 0.0
 
     @property
     def active(self) -> bool:
@@ -58,9 +64,14 @@ class VisualServoController:
             self._on_log("visual servo disabled; motion commands will not be published")
             return
         self._active = True
-        self._state = "searching"
+        self._state = "waiting_result" if self._config.step_search_enabled else "searching"
         self._last_target_at = 0.0
-        self._publish(0.0, self._config.search_angular_z)
+        self._last_result_at = 0.0
+        self._state_started_at = time.monotonic()
+        if self._config.step_search_enabled:
+            self._publish_stop()
+        else:
+            self._publish(0.0, self._config.search_angular_z)
 
     def stop(self, reason: str = "stopped") -> None:
         if not self._active and self._state == "idle":
@@ -78,6 +89,7 @@ class VisualServoController:
         similarity = _as_float(result.get("similarity"), 0.0)
         center_norm = _as_float_pair(result.get("center_norm"))
         front_distance = self._sensors.front_distance_m()
+        self._last_result_at = time.monotonic()
 
         if front_distance is not None and front_distance <= self._config.safety_stop_distance_m:
             self._state = "safety_stop"
@@ -91,15 +103,7 @@ class VisualServoController:
             }
 
         if not matched or center_norm is None:
-            self._state = "searching"
-            self._publish(0.0, self._config.search_angular_z)
-            return {
-                "motion_state": self._state,
-                "command": "search",
-                "angular_z": self._config.search_angular_z,
-                "front_distance_m": front_distance,
-                "similarity": similarity,
-            }
+            return self._handle_no_match(front_distance=front_distance, similarity=similarity)
 
         self._last_target_at = time.monotonic()
         x_error = center_norm[0] - 0.5
@@ -162,16 +166,97 @@ class VisualServoController:
             self._last_target_at > 0.0
             and now - self._last_target_at > self._config.lost_timeout_seconds
         ):
-            self._state = "searching"
+            self._state = "waiting_result" if self._config.step_search_enabled else "searching"
             self._last_target_at = 0.0
+            self._state_started_at = now
+            if self._config.step_search_enabled:
+                self._publish_stop()
+                return {"motion_state": self._state, "command": "wait_result", "reason": "target_lost"}
             self._publish(0.0, self._config.search_angular_z)
             return {"motion_state": self._state, "command": "search", "reason": "target_lost"}
+        if self._config.step_search_enabled:
+            return self._tick_step_search(now)
         if now - self._last_command_at > self._config.command_timeout_seconds:
             if self._state == "searching":
                 self._publish(0.0, self._config.search_angular_z)
             elif self._state in {"aligning", "approaching"}:
                 self._publish_stop()
                 return {"motion_state": self._state, "command": "stop", "reason": "command_timeout"}
+        return None
+
+    def _handle_no_match(self, *, front_distance: float | None, similarity: float) -> dict[str, Any]:
+        if not self._config.step_search_enabled:
+            self._state = "searching"
+            self._publish(0.0, self._config.search_angular_z)
+            return {
+                "motion_state": self._state,
+                "command": "search",
+                "angular_z": self._config.search_angular_z,
+                "front_distance_m": front_distance,
+                "similarity": similarity,
+            }
+
+        now = time.monotonic()
+        if self._state in {"step_rotating", "settling"}:
+            return {
+                "motion_state": self._state,
+                "command": "ignore_result_while_moving",
+                "front_distance_m": front_distance,
+                "similarity": similarity,
+            }
+
+        self._state = "step_rotating"
+        self._state_started_at = now
+        self._publish(0.0, self._config.search_angular_z)
+        return {
+            "motion_state": self._state,
+            "command": "rotate_step",
+            "angular_z": self._config.search_angular_z,
+            "duration_seconds": self._config.search_step_seconds,
+            "front_distance_m": front_distance,
+            "similarity": similarity,
+        }
+
+    def _tick_step_search(self, now: float) -> dict[str, Any] | None:
+        if self._state == "step_rotating":
+            if now - self._state_started_at >= self._config.search_step_seconds:
+                self._state = "settling"
+                self._state_started_at = now
+                self._publish_stop()
+                return {
+                    "motion_state": self._state,
+                    "command": "stop",
+                    "reason": "step_complete",
+                }
+            if now - self._last_command_at > self._config.command_timeout_seconds:
+                self._publish(0.0, self._config.search_angular_z)
+            return None
+
+        if self._state == "settling":
+            if now - self._state_started_at >= self._config.search_settle_seconds:
+                self._state = "waiting_result"
+                self._state_started_at = now
+                self._publish_stop()
+                return {
+                    "motion_state": self._state,
+                    "command": "wait_result",
+                    "reason": "settled",
+                }
+            return None
+
+        if self._state == "waiting_result":
+            last = self._last_result_at or self._state_started_at
+            if now - last >= self._config.search_result_timeout_seconds:
+                self._state = "step_rotating"
+                self._state_started_at = now
+                self._publish(0.0, self._config.search_angular_z)
+                return {
+                    "motion_state": self._state,
+                    "command": "rotate_step",
+                    "reason": "result_timeout",
+                    "angular_z": self._config.search_angular_z,
+                    "duration_seconds": self._config.search_step_seconds,
+                }
         return None
 
     def _publish(self, linear_x: float, angular_z: float) -> None:
