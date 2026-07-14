@@ -19,6 +19,11 @@ from jetcar_edge.cloud_result_client import CloudResultClient
 from jetcar_edge.cloud_discovery import CloudDiscoveryConfig, discover_cloud_host
 from jetcar_edge.docker_orchestrator import DockerOrchestrator, DockerProgram
 from jetcar_edge.image_codec import ImageCodec
+from jetcar_edge.inspection_controller import (
+    INSPECTION_ALGORITHMS,
+    InspectionConfig,
+    InspectionController,
+)
 from jetcar_edge.models import VideoFrameUpload
 from jetcar_edge.motion_controller import VisualServoConfig, VisualServoController
 from jetcar_edge.safety import SafetyMonitor
@@ -104,6 +109,15 @@ class EdgeUploadNode(Node):
         self.declare_parameter("similarity_cautious_approach_linear_x", 0.045)
         self.declare_parameter("similarity_approach_step_seconds", 0.45)
         self.declare_parameter("similarity_approach_angular_gain", 0.45)
+        self.declare_parameter("inspection_motion_enabled", True)
+        self.declare_parameter("inspection_target_count", 3)
+        self.declare_parameter("inspection_linear_x", 0.07)
+        self.declare_parameter("inspection_angular_z", 0.10)
+        self.declare_parameter("inspection_sway_seconds", 1.8)
+        self.declare_parameter("inspection_result_cooldown_seconds", 1.4)
+        self.declare_parameter("inspection_detection_min_confidence", 0.25)
+        self.declare_parameter("inspection_safety_stop_distance_m", 0.35)
+        self.declare_parameter("inspection_obstacle_turn_angular_z", 0.35)
 
         self._car_id = str(self.get_parameter("car_id").value)
         self._stream_id = str(self.get_parameter("stream_id").value)
@@ -268,6 +282,35 @@ class EdgeUploadNode(Node):
             report_event=self._report_edge_event,
             on_log=lambda msg: self.get_logger().info(msg),
         )
+        self._inspection_controller = InspectionController(
+            car_id=self._car_id,
+            stream_id=self._stream_id,
+            config=InspectionConfig(
+                enabled=bool(self.get_parameter("inspection_motion_enabled").value),
+                target_count=int(self.get_parameter("inspection_target_count").value),
+                linear_x=float(self.get_parameter("inspection_linear_x").value),
+                angular_z=float(self.get_parameter("inspection_angular_z").value),
+                sway_seconds=float(self.get_parameter("inspection_sway_seconds").value),
+                result_cooldown_seconds=float(
+                    self.get_parameter("inspection_result_cooldown_seconds").value
+                ),
+                detection_min_confidence=float(
+                    self.get_parameter("inspection_detection_min_confidence").value
+                ),
+                safety_stop_distance_m=float(
+                    self.get_parameter("inspection_safety_stop_distance_m").value
+                ),
+                obstacle_turn_angular_z=float(
+                    self.get_parameter("inspection_obstacle_turn_angular_z").value
+                ),
+            ),
+            sensor_buffer=self._sensors,
+            cmd_pub=self._cmd_pub,
+            result_pub=self._result_pub,
+            stop_ai=lambda reason: self._set_ai_algorithms([], reason=reason),
+            report_event=self._report_edge_event,
+            on_log=lambda msg: self.get_logger().info(msg),
+        )
         self._start_control_server()
         self._start_frame_server()
         self._cloud_results.start()
@@ -280,6 +323,7 @@ class EdgeUploadNode(Node):
     def destroy_node(self) -> bool:
         self._stop_control_server()
         self._stop_frame_server()
+        self._inspection_controller.stop(reason="node_destroy")
         self._similarity_controller.stop(reason="node_destroy")
         self._cloud_results.stop()
         self._cloud.stop()
@@ -298,12 +342,17 @@ class EdgeUploadNode(Node):
             self._set_ai_algorithms([], reason="ros_algorithm_ids_empty")
             self._similarity_frame_inflight = False
             self._similarity_controller.stop(reason="ros_algorithm_ids_empty")
+            self._inspection_controller.stop(reason="ros_algorithm_ids_empty")
             return
         self._set_ai_algorithms(algorithms, reason="ros_algorithm_ids")
         if "yolov5-similarity" in algorithms:
             self._similarity_controller.start()
         else:
             self._similarity_controller.stop(reason="ros_algorithm_ids_without_similarity")
+        if self._has_inspection_algorithm(algorithms):
+            self._inspection_controller.start()
+        else:
+            self._inspection_controller.stop(reason="ros_algorithm_ids_without_inspection")
 
     def _on_task_status(self, msg: String) -> None:
         try:
@@ -344,7 +393,13 @@ class EdgeUploadNode(Node):
         self._set_ai_algorithms(algorithms, reason="app_control")
         if mode in {"similarity", "search"}:
             self._similarity_controller.start()
-        elif not algorithms:
+        elif "yolov5-similarity" not in algorithms:
+            self._similarity_controller.stop(reason="app_control_without_similarity")
+        if self._has_inspection_algorithm(algorithms):
+            self._inspection_controller.start()
+        else:
+            self._inspection_controller.stop(reason="app_control_without_inspection")
+        if not algorithms:
             self._similarity_controller.stop(reason="app_control_off")
         return {
             "ok": True,
@@ -355,6 +410,11 @@ class EdgeUploadNode(Node):
             "similarity_search": {
                 "active": self._similarity_controller.active,
                 "state": self._similarity_controller.state,
+            },
+            "road_inspection": {
+                "active": self._inspection_controller.active,
+                "state": self._inspection_controller.state,
+                "count": self._inspection_controller.count,
             },
             "cloud_url": self._cloud_url() if self._algorithm_ids else "",
         }
@@ -410,6 +470,7 @@ class EdgeUploadNode(Node):
         if str(result.get("algorithm_id") or "") == "yolov5-similarity":
             self._similarity_frame_inflight = False
         self._similarity_controller.handle_cloud_result(result)
+        self._inspection_controller.handle_cloud_result(result)
 
         dangerous = self._safety.is_dangerous(result)
         self._emergency_pub.publish(Bool(data=dangerous))
@@ -447,6 +508,11 @@ class EdgeUploadNode(Node):
             "search_warning",
             "motion_update",
             "task_status",
+            "inspection_started",
+            "inspection_detection",
+            "inspection_complete",
+            "inspection_stopped",
+            "inspection_warning",
         }:
             return
         if event == "target_found" and not payload.get("final_image"):
@@ -485,6 +551,7 @@ class EdgeUploadNode(Node):
 
     def _on_timer(self) -> None:
         self._similarity_controller.tick()
+        self._inspection_controller.tick()
 
     def _log_camera_status(self) -> None:
         age = None
@@ -704,6 +771,8 @@ class EdgeUploadNode(Node):
             return []
         if mode in {"similarity", "search"}:
             return ["yolov5-similarity"]
+        if mode in {"inspection", "road_inspection", "inspection_task", "road_inspection_task"}:
+            return ["yolov5-manhole-detect", "yolov8-road-damage"]
 
         mask = str(payload.get("mask") or "").strip().upper()
         if mask:
@@ -720,6 +789,9 @@ class EdgeUploadNode(Node):
         if enabled is False:
             return []
         return self._algorithm_ids
+
+    def _has_inspection_algorithm(self, algorithms: list[str]) -> bool:
+        return any(item in INSPECTION_ALGORITHMS for item in algorithms)
 
 
 def main(args=None) -> None:

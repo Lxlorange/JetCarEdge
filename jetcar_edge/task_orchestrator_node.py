@@ -47,8 +47,8 @@ class TaskOrchestratorNode(Node):
 
     This node intentionally does not call Nav2 or map localization. It only
     translates task commands from the phone into algorithm enable/disable
-    messages. Motion for similarity search is handled by edge_upload_node's
-    visual-servo controller from Cloud similarity results and lidar safety data.
+    messages. Motion for similarity search and road inspection is handled by
+    edge_upload_node from Cloud results and lidar safety data.
     """
 
     def __init__(self) -> None:

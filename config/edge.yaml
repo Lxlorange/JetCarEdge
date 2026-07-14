@@ -70,3 +70,15 @@ similarity_approach_linear_x: 0.08
 similarity_cautious_approach_linear_x: 0.045
 similarity_approach_step_seconds: 0.45
 similarity_approach_angular_gain: 0.45
+
+# Road inspection is demo-first: drive forward slowly with a small sway,
+# count effective YOLO result frames, and stop after enough results.
+inspection_motion_enabled: true
+inspection_target_count: 3
+inspection_linear_x: 0.07
+inspection_angular_z: 0.10
+inspection_sway_seconds: 1.8
+inspection_result_cooldown_seconds: 1.4
+inspection_detection_min_confidence: 0.25
+inspection_safety_stop_distance_m: 0.35
+inspection_obstacle_turn_angular_z: 0.35
