@@ -19,14 +19,16 @@ class VisualServoConfig:
     align_tolerance: float = 0.12
     target_stop_distance_m: float = 0.7
     safety_stop_distance_m: float = 0.35
+    target_stop_bbox_area: float = 0.28
     lost_timeout_seconds: float = 3.0
-    search_angular_z: float = 0.18
+    search_angular_z: float = 0.60
     step_search_enabled: bool = True
-    search_step_seconds: float = 0.65
+    search_step_seconds: float = 1.75
     search_settle_seconds: float = 0.35
     search_result_timeout_seconds: float = 3.0
     align_angular_gain: float = 0.8
-    approach_linear_x: float = 0.12
+    approach_linear_x: float = 0.08
+    cautious_approach_linear_x: float = 0.045
     approach_angular_gain: float = 0.45
     command_timeout_seconds: float = 0.8
 
@@ -88,6 +90,7 @@ class VisualServoController:
         matched = _as_bool(result.get("matched"))
         similarity = _as_float(result.get("similarity"), 0.0)
         center_norm = _as_float_pair(result.get("center_norm"))
+        bbox_area = _bbox_area(result.get("bbox_norm"))
         front_distance = self._sensors.front_distance_m()
         self._last_result_at = time.monotonic()
 
@@ -118,6 +121,19 @@ class VisualServoController:
                 "x_error": round(x_error, 4),
                 "angular_z": round(angular_z, 4),
                 "front_distance_m": front_distance,
+                "bbox_area": bbox_area,
+                "similarity": similarity,
+            }
+
+        if bbox_area is not None and bbox_area >= self._config.target_stop_bbox_area:
+            self._state = "arrived"
+            self._publish_stop()
+            return {
+                "motion_state": self._state,
+                "command": "stop",
+                "reason": "target_bbox_large_enough",
+                "center_norm": center_norm,
+                "bbox_area": round(bbox_area, 4),
                 "similarity": similarity,
             }
 
@@ -130,21 +146,23 @@ class VisualServoController:
                 "reason": "target_distance_reached",
                 "center_norm": center_norm,
                 "front_distance_m": front_distance,
+                "bbox_area": bbox_area,
                 "similarity": similarity,
             }
 
         if front_distance is None:
             angular_z = -x_error * self._config.approach_angular_gain
             self._state = "approaching"
-            self._publish(self._config.approach_linear_x, angular_z)
+            self._publish(self._config.cautious_approach_linear_x, angular_z)
             return {
                 "motion_state": self._state,
                 "command": "approach",
                 "reason": "front_distance_unavailable_use_cautious_step",
                 "center_norm": center_norm,
                 "x_error": round(x_error, 4),
-                "linear_x": self._config.approach_linear_x,
+                "linear_x": self._config.cautious_approach_linear_x,
                 "angular_z": round(angular_z, 4),
+                "bbox_area": bbox_area,
                 "similarity": similarity,
             }
 
@@ -159,6 +177,7 @@ class VisualServoController:
             "linear_x": self._config.approach_linear_x,
             "angular_z": round(angular_z, 4),
             "front_distance_m": front_distance,
+            "bbox_area": bbox_area,
             "similarity": similarity,
         }
 
@@ -303,3 +322,17 @@ def _as_float_pair(value: Any) -> list[float] | None:
     if x < 0.0 or y < 0.0:
         return None
     return [max(0.0, min(1.0, x)), max(0.0, min(1.0, y))]
+
+
+def _bbox_area(value: Any) -> float | None:
+    if not isinstance(value, (list, tuple)) or len(value) < 4:
+        return None
+    x1 = _as_float(value[0], -1.0)
+    y1 = _as_float(value[1], -1.0)
+    x2 = _as_float(value[2], -1.0)
+    y2 = _as_float(value[3], -1.0)
+    if min(x1, y1, x2, y2) < 0.0:
+        return None
+    width = max(0.0, min(1.0, x2) - max(0.0, x1))
+    height = max(0.0, min(1.0, y2) - max(0.0, y1))
+    return width * height

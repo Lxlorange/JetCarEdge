@@ -85,16 +85,18 @@ class EdgeUploadNode(Node):
         self.declare_parameter("similarity_auto_stop_on_match", True)
         self.declare_parameter("similarity_motion_enabled", True)
         self.declare_parameter("similarity_align_tolerance", 0.12)
-        self.declare_parameter("similarity_target_stop_distance_m", 0.7)
+        self.declare_parameter("similarity_target_stop_distance_m", 1.0)
         self.declare_parameter("similarity_safety_stop_distance_m", 0.35)
+        self.declare_parameter("similarity_target_stop_bbox_area", 0.28)
         self.declare_parameter("similarity_lost_timeout_seconds", 3.0)
         self.declare_parameter("similarity_step_search_enabled", True)
-        self.declare_parameter("similarity_search_angular_z", 0.30)
-        self.declare_parameter("similarity_search_step_seconds", 0.85)
+        self.declare_parameter("similarity_search_angular_z", 0.60)
+        self.declare_parameter("similarity_search_step_seconds", 1.75)
         self.declare_parameter("similarity_search_settle_seconds", 0.45)
         self.declare_parameter("similarity_search_result_timeout_seconds", 2.5)
         self.declare_parameter("similarity_align_angular_gain", 0.8)
-        self.declare_parameter("similarity_approach_linear_x", 0.12)
+        self.declare_parameter("similarity_approach_linear_x", 0.08)
+        self.declare_parameter("similarity_cautious_approach_linear_x", 0.045)
         self.declare_parameter("similarity_approach_angular_gain", 0.45)
 
         self._car_id = str(self.get_parameter("car_id").value)
@@ -212,6 +214,7 @@ class EdgeUploadNode(Node):
                 align_tolerance=float(self.get_parameter("similarity_align_tolerance").value),
                 target_stop_distance_m=float(self.get_parameter("similarity_target_stop_distance_m").value),
                 safety_stop_distance_m=float(self.get_parameter("similarity_safety_stop_distance_m").value),
+                target_stop_bbox_area=float(self.get_parameter("similarity_target_stop_bbox_area").value),
                 lost_timeout_seconds=float(self.get_parameter("similarity_lost_timeout_seconds").value),
                 step_search_enabled=bool(self.get_parameter("similarity_step_search_enabled").value),
                 search_angular_z=float(self.get_parameter("similarity_search_angular_z").value),
@@ -222,6 +225,9 @@ class EdgeUploadNode(Node):
                 ),
                 align_angular_gain=float(self.get_parameter("similarity_align_angular_gain").value),
                 approach_linear_x=float(self.get_parameter("similarity_approach_linear_x").value),
+                cautious_approach_linear_x=float(
+                    self.get_parameter("similarity_cautious_approach_linear_x").value
+                ),
                 approach_angular_gain=float(self.get_parameter("similarity_approach_angular_gain").value),
             ),
             sensor_buffer=self._sensors,
