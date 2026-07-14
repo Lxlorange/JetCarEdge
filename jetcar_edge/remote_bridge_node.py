@@ -10,7 +10,7 @@ from typing import Any
 import rclpy
 from geometry_msgs.msg import Twist
 from rclpy.node import Node
-from std_msgs.msg import Empty
+from std_msgs.msg import Empty, String
 
 
 @dataclass
@@ -38,6 +38,7 @@ class RemoteBridgeNode(Node):
         self.declare_parameter("remote_control_port", 6000)
         self.declare_parameter("cmd_vel_topic", "/cmd_vel")
         self.declare_parameter("snapshot_topic", "/jetcar/snapshot")
+        self.declare_parameter("algorithm_control_topic", "/jetcar/algorithm_ids")
         self.declare_parameter("max_linear_x", 0.35)
         self.declare_parameter("max_linear_y", 0.25)
         self.declare_parameter("max_angular_z", 0.8)
@@ -56,6 +57,11 @@ class RemoteBridgeNode(Node):
         self._snapshot_pub = self.create_publisher(
             Empty,
             str(self.get_parameter("snapshot_topic").value),
+            10,
+        )
+        self._algorithm_pub = self.create_publisher(
+            String,
+            str(self.get_parameter("algorithm_control_topic").value),
             10,
         )
         self._state = RemoteState()
@@ -155,9 +161,11 @@ class RemoteBridgeNode(Node):
         if cmd == "02":
             return self._reply("02", [int(self.get_parameter("battery_voltage_x10").value)])
         if cmd == "10":
+            self._manual_override()
             self._handle_joystick(payload)
             return ""
         if cmd == "15":
+            self._manual_override()
             self._handle_button(payload)
             return ""
         if cmd == "16":
@@ -195,6 +203,7 @@ class RemoteBridgeNode(Node):
         if not payload:
             return
         direction = payload[0]
+        self.get_logger().info(f"remote button command direction={direction}")
         linear_x = float(self.get_parameter("button_linear_x").value)
         linear_y = float(self.get_parameter("button_linear_y").value)
         angular_z = float(self.get_parameter("button_angular_z").value)
@@ -251,6 +260,9 @@ class RemoteBridgeNode(Node):
 
     def _publish_stop(self) -> None:
         self._publish_twist(0.0, 0.0, 0.0)
+
+    def _manual_override(self) -> None:
+        self._algorithm_pub.publish(String(data=""))
 
     def _watchdog_tick(self) -> None:
         timeout = float(self.get_parameter("command_timeout_seconds").value)

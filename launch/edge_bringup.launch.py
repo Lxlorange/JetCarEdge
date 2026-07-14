@@ -75,6 +75,7 @@ def generate_launch_description() -> LaunchDescription:
                 "remote_control_port": remote_control_port,
                 "cmd_vel_topic": "/cmd_vel",
                 "snapshot_topic": "/jetcar/snapshot",
+                "algorithm_control_topic": "/jetcar/algorithm_ids",
             }
         ],
     )
