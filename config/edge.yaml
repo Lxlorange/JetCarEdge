@@ -55,8 +55,8 @@ similarity_target_stop_distance_m: 0.7
 similarity_safety_stop_distance_m: 0.35
 similarity_lost_timeout_seconds: 3.0
 similarity_step_search_enabled: true
-similarity_search_angular_z: 0.08
-similarity_search_step_seconds: 0.75
+similarity_search_angular_z: 0.30
+similarity_search_step_seconds: 0.85
 similarity_search_settle_seconds: 0.45
 similarity_search_result_timeout_seconds: 2.5
 similarity_align_angular_gain: 0.8

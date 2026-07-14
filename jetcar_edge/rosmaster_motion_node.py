@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Optional
 
 import rclpy
@@ -31,6 +32,8 @@ class RosmasterMotionNode(Node):
         self.declare_parameter("max_angular_z", 0.8)
 
         self._bot: Optional[Rosmaster] = None
+        self._last_log_at = 0.0
+        self._last_nonzero = False
         self._open_bot()
         self.create_subscription(
             Twist,
@@ -71,6 +74,7 @@ class RosmasterMotionNode(Node):
         vx = _clamp(float(msg.linear.x), float(self.get_parameter("max_linear_x").value))
         vy = _clamp(float(msg.linear.y), float(self.get_parameter("max_linear_y").value))
         wz = _clamp(float(msg.angular.z), float(self.get_parameter("max_angular_z").value))
+        self._log_motion(vx, vy, wz)
         self._bot.set_car_motion(vx, vy, wz)
 
     def _stop(self) -> None:
@@ -81,6 +85,17 @@ class RosmasterMotionNode(Node):
             self._bot.set_motor(0, 0, 0, 0)
         except Exception as exc:
             self.get_logger().warning(f"failed to stop Rosmaster chassis: {exc}")
+
+    def _log_motion(self, vx: float, vy: float, wz: float) -> None:
+        nonzero = abs(vx) > 1e-4 or abs(vy) > 1e-4 or abs(wz) > 1e-4
+        now = time.monotonic()
+        if nonzero:
+            if now - self._last_log_at >= 0.8:
+                self.get_logger().info(f"cmd_vel -> Rosmaster vx={vx:.3f} vy={vy:.3f} wz={wz:.3f}")
+                self._last_log_at = now
+        elif self._last_nonzero:
+            self.get_logger().info("cmd_vel -> Rosmaster stop")
+        self._last_nonzero = nonzero
 
 
 def _clamp(value: float, limit: float) -> float:
