@@ -72,14 +72,18 @@ source install/setup.bash
 set -u
 echo "[\$(date -Is)] ROS env loaded for edge"
 echo "[\$(date -Is)] cloud_url=$CLOUD_URL start_camera=$START_CAMERA start_motion_driver=$START_MOTION_DRIVER"
-ros2 launch jetcar_edge edge_bringup.launch.py \
-  cloud_url:=$CLOUD_URL \
-  start_base:=false \
-  start_camera:=$START_CAMERA \
-  start_motion_driver:=$START_MOTION_DRIVER \
-  rosmaster_serial_port:=$ROSMASTER_SERIAL_PORT \
-  start_remote_bridge:=true \
-  start_task_orchestrator:=true
+ARGS=(
+  "cloud_url:=$CLOUD_URL"
+  "start_base:=false"
+  "start_camera:=$START_CAMERA"
+  "start_motion_driver:=$START_MOTION_DRIVER"
+  "start_remote_bridge:=true"
+  "start_task_orchestrator:=true"
+)
+if [ -n "$ROSMASTER_SERIAL_PORT" ]; then
+  ARGS+=("rosmaster_serial_port:=$ROSMASTER_SERIAL_PORT")
+fi
+ros2 launch jetcar_edge edge_bringup.launch.py "\${ARGS[@]}"
 EOF
 chmod +x "$EDGE_RUNNER"
 nohup "$EDGE_RUNNER" >"$LOG_DIR/edge.log" 2>&1 &
